@@ -1,0 +1,30 @@
+FROM alpine:3.20
+
+# Install: postgresql-client (pg_dump/psql), age, aws-cli, redis, bash, curl.
+RUN apk add --no-cache \
+    bash \
+    postgresql16-client \
+    redis \
+    python3 \
+    py3-pip \
+    curl \
+    tar \
+    && pip3 install --no-cache-dir --break-system-packages awscli \
+    && curl -fsSL \
+        https://github.com/FiloSottile/age/releases/download/v1.1.1/age-v1.1.1-linux-amd64.tar.gz \
+        | tar -xz --strip-components=1 -C /usr/local/bin age/age age/age-keygen
+
+COPY postgres-backup.sh /usr/local/bin/postgres-backup.sh
+COPY postgres-restore.sh /usr/local/bin/postgres-restore.sh
+COPY redis-backup.sh     /usr/local/bin/redis-backup.sh
+
+RUN chmod +x \
+    /usr/local/bin/postgres-backup.sh \
+    /usr/local/bin/postgres-restore.sh \
+    /usr/local/bin/redis-backup.sh
+
+# Cron: postgres backup at 02:00 UTC, redis backup at 02:15 UTC daily.
+RUN echo "0  2 * * * /usr/local/bin/postgres-backup.sh >> /var/log/backup.log 2>&1" > /etc/crontabs/root \
+ && echo "15 2 * * * /usr/local/bin/redis-backup.sh    >> /var/log/backup.log 2>&1" >> /etc/crontabs/root
+
+CMD ["crond", "-f", "-l", "6"]

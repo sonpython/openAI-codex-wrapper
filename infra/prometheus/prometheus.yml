@@ -1,0 +1,52 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+  external_labels:
+    env: production
+    service: codex-wrapper
+
+# Load alert rules.
+rule_files:
+  - /etc/prometheus/rules.yml
+
+# Alertmanager endpoint (Docker network).
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # Gateway — primary API metrics.
+  - job_name: gateway
+    static_configs:
+      - targets: ["gateway:8000"]
+    metrics_path: /_internal/metrics
+
+  # Worker — arq job metrics (multiproc Prometheus dir or dedicated port).
+  - job_name: worker
+    static_configs:
+      - targets: ["worker:9091"]
+    metrics_path: /_internal/metrics
+
+  # Postgres exporter.
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  # Redis exporter.
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  # Caddy admin metrics (bound on :2019/metrics inside Docker network).
+  - job_name: caddy
+    static_configs:
+      - targets: ["caddy:2019"]
+    metrics_path: /metrics
+
+  # Prometheus self-scrape.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

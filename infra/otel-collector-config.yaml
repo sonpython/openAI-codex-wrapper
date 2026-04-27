@@ -1,0 +1,86 @@
+# OpenTelemetry Collector — production config (phase 10).
+# Replaces the dev no-op debug exporter stub from phase 07.
+#
+# Receives OTLP from gateway + worker, fans out to:
+#   - Tempo (traces, OTLP gRPC)
+#   - Loki  (logs,   OTLP HTTP)
+#   - Prometheus (metrics, remote-write)
+#
+# Security: ports 4317/4318 bound on Docker internal network only.
+# Never expose to public internet.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Memory limiter — prevent OOM on traffic spikes.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+
+  # Batch processor — group spans/metrics/logs into efficient export payloads.
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+  # Attach resource attributes to every span/metric/log record.
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: production
+        action: upsert
+      - key: service.namespace
+        value: codex-wrapper
+        action: upsert
+
+exporters:
+  # Traces → Tempo (OTLP gRPC on Docker network).
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  # Logs → Loki (OTLP HTTP).
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
+  # Metrics → Prometheus remote-write.
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
+    tls:
+      insecure: true
+
+  # Debug exporter retained for local dev override; not used in prod pipelines.
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/tempo]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheusremotewrite]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlphttp/loki]
+
+  telemetry:
+    logs:
+      level: warn
+    metrics:
+      address: 0.0.0.0:8888

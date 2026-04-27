@@ -1,0 +1,101 @@
+groups:
+  - name: codex-wrapper
+    rules:
+
+      # 1. Codex session unhealthy — auth token expired or refresh broken.
+      # Source: phase-08 session monitor sets codex_session_unhealthy gauge.
+      - alert: CodexSessionUnhealthy
+        expr: codex_session_unhealthy == 1
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "Codex session is unhealthy on {{ $labels.instance }}"
+          description: >
+            The codex_session_unhealthy gauge has been 1 for 5 minutes.
+            ChatGPT auth token may be expired or the ~/.codex mount is missing.
+          runbook_url: "https://github.com/your-org/codex-wrapper/blob/main/docs/operations-runbook.md#9-recover-from-chatgpt-session-expiry"
+
+      # 2. P95 request latency > 5s for /v1/chat/completions.
+      - alert: P95LatencyHigh
+        expr: >
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{route="/v1/chat/completions"}[5m]))
+            by (le, route)
+          ) > 5
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: "P95 latency > 5s on {{ $labels.route }}"
+          description: >
+            95th-percentile response time for {{ $labels.route }} has exceeded
+            5 seconds for 10 minutes. May indicate Codex CLI slowness or worker backlog.
+          runbook_url: "https://github.com/your-org/codex-wrapper/blob/main/docs/operations-runbook.md#7-investigate-stuck-job"
+
+      # 3. Rate-limit rejection spike — possible hot key or DDoS.
+      - alert: RateLimitRejectionSpike
+        expr: rate(rate_limit_rejections_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Rate-limit rejections spiking ({{ $value | humanize }}/s)"
+          description: >
+            rate_limit_rejections_total is increasing at > 10/s for 5 minutes.
+            Check for hot API key, misconfigured client, or DDoS attempt.
+          runbook_url: "https://github.com/your-org/codex-wrapper/blob/main/docs/operations-runbook.md#8-add-new-tier--change-rate-limit"
+
+      # 4. Arq queue depth high — jobs backing up.
+      - alert: ArqQueueDepthHigh
+        expr: arq_queue_depth > 100
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: "Arq queue depth > 100 ({{ $value }} jobs)"
+          description: >
+            More than 100 jobs are queued for over 10 minutes.
+            Workers may be stuck or undersized. Check worker logs.
+          runbook_url: "https://github.com/your-org/codex-wrapper/blob/main/docs/operations-runbook.md#7-investigate-stuck-job"
+
+      # 5. Workspace disk usage > 80% of tmpfs allocation.
+      - alert: WorkspaceDiskFull
+        expr: >
+          (workspace_disk_bytes_used / workspace_disk_bytes_total) > 0.8
+        labels:
+          severity: page
+        annotations:
+          summary: "Workspace disk usage > 80% ({{ $value | humanizePercentage }})"
+          description: >
+            The /workspaces tmpfs mount is > 80% full. Janitor may be lagging
+            or a runaway job has not been cleaned up. Immediate action required.
+          runbook_url: "https://github.com/your-org/codex-wrapper/blob/main/docs/operations-runbook.md#6-restore-from-backup"
+
+      # 6. Container restart loop — service is crash-looping.
+      # Uses the container_restarts_total metric exposed by cAdvisor or
+      # a custom gauge pushed by the compose health-check watcher.
+      - alert: ContainerRestartLoop
+        expr: >
+          increase(container_restarts_total[15m]) > 3
+        labels:
+          severity: page
+        annotations:
+          summary: "Container {{ $labels.container }} restarted > 3 times in 15m"
+          description: >
+            Container {{ $labels.container }} has restarted {{ $value }} times
+            in the last 15 minutes. Investigate logs immediately.
+          runbook_url: "https://github.com/your-org/codex-wrapper/blob/main/docs/operations-runbook.md#7-investigate-stuck-job"
+
+      # 7. Postgres connection failures — DB query error rate spike.
+      - alert: PostgresConnectionFailures
+        expr: rate(db_query_errors_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "Postgres query errors > 5/s ({{ $value | humanize }}/s)"
+          description: >
+            db_query_errors_total is increasing at > 5/s for 5 minutes.
+            Postgres may be down, overloaded, or connection pool exhausted.
+          runbook_url: "https://github.com/your-org/codex-wrapper/blob/main/docs/operations-runbook.md#6-restore-from-backup"

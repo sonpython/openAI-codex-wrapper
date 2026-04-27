@@ -1,0 +1,91 @@
+global:
+  # How long to wait before re-sending an unresolved alert.
+  resolve_timeout: 5m
+
+  # Slack defaults — override per receiver if needed.
+  slack_api_url: "${SLACK_WEBHOOK_URL}"
+
+# ── Routing tree ──────────────────────────────────────────────────────────────
+route:
+  # Default receiver for any unmatched alert.
+  receiver: slack-info
+  group_by: [alertname, env]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    # page severity → PagerDuty (requires PAGERDUTY_KEY env var).
+    - matchers:
+        - severity = page
+      receiver: pagerduty-page
+      repeat_interval: 1h
+      continue: true   # also send to Slack for visibility
+
+    # page severity → Slack critical channel.
+    - matchers:
+        - severity = page
+      receiver: slack-critical
+
+    # warn severity → Slack info channel.
+    - matchers:
+        - severity = warn
+      receiver: slack-info
+
+# ── Inhibition rules ──────────────────────────────────────────────────────────
+inhibit_rules:
+  # If Postgres is down, suppress downstream alerts that are a consequence
+  # (queue depth, latency) to reduce noise.
+  - source_matchers:
+      - alertname = PostgresConnectionFailures
+    target_matchers:
+      - alertname =~ "ArqQueueDepthHigh|P95LatencyHigh"
+    equal: [env]
+
+  # If Codex session is unhealthy, suppress latency warn (expected degradation).
+  - source_matchers:
+      - alertname = CodexSessionUnhealthy
+    target_matchers:
+      - alertname = P95LatencyHigh
+    equal: [env]
+
+# ── Receivers ─────────────────────────────────────────────────────────────────
+receivers:
+  - name: slack-info
+    slack_configs:
+      - channel: "#codex-alerts"
+        username: "alertmanager"
+        icon_emoji: ":warning:"
+        title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}'
+        text: >-
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Severity:* {{ .Labels.severity }}
+          {{ if .Annotations.description }}*Details:* {{ .Annotations.description }}{{ end }}
+          {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+          {{ end }}
+        send_resolved: true
+
+  - name: slack-critical
+    slack_configs:
+      - channel: "#codex-incidents"
+        username: "alertmanager"
+        icon_emoji: ":fire:"
+        title: '[CRITICAL] {{ .CommonLabels.alertname }}'
+        text: >-
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          {{ if .Annotations.description }}*Details:* {{ .Annotations.description }}{{ end }}
+          {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+          {{ end }}
+        send_resolved: true
+
+  - name: pagerduty-page
+    pagerduty_configs:
+      # Set PAGERDUTY_KEY env var; leave empty to disable PD routing.
+      - routing_key: "${PAGERDUTY_KEY}"
+        description: '{{ .CommonLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+        details:
+          severity: '{{ .CommonLabels.severity }}'
+          runbook: '{{ .CommonAnnotations.runbook_url }}'
+        send_resolved: true

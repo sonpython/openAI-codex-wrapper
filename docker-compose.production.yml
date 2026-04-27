@@ -1,0 +1,249 @@
+# Production overlay — extends docker-compose.yml.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+#
+# All image tags are pinned. Update deliberately; test in staging first.
+
+x-logging: &default-logging
+  driver: local
+  options:
+    max-size: "100m"
+    max-file: "10"
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+services:
+
+  # ── Core services — hardened ───────────────────────────────────────────────
+
+  postgres:
+    <<: *default-restart
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-codex} -d ${POSTGRES_DB:-codex_wrapper}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports: []   # no external port exposure in prod
+
+  redis:
+    <<: *default-restart
+    logging: *default-logging
+    # Enable AOF persistence + RDB snapshot every 5 min if 100 keys changed.
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --save 300 100
+      --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    ports: []
+
+  gateway:
+    <<: *default-restart
+    logging: *default-logging
+    image: ghcr.io/${GHCR_ORG:-your-org}/codex-wrapper-gateway:${IMAGE_TAG:-latest}
+    volumes:
+      - "${CODEX_AUTH_HOST_DIR:-${HOME}/.codex}:/codex-auth:ro"
+    ports: []   # caddy handles ingress; no direct exposure
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+
+  worker:
+    <<: *default-restart
+    logging: *default-logging
+    image: ghcr.io/${GHCR_ORG:-your-org}/codex-wrapper-worker:${IMAGE_TAG:-latest}
+    volumes:
+      - "${CODEX_AUTH_HOST_DIR:-${HOME}/.codex}:/codex-auth:ro"
+      - workspaces:/workspaces
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+
+  caddy:
+    <<: *default-restart
+    logging: *default-logging
+    image: caddy:2.8.4
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/Caddyfile.production:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    depends_on:
+      gateway:
+        condition: service_started
+
+  otel-collector:
+    <<: *default-restart
+    logging: *default-logging
+    image: otel/opentelemetry-collector-contrib:0.110.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./infra/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports: []   # OTLP only on Docker network
+
+  # ── Observability stack ────────────────────────────────────────────────────
+
+  prometheus:
+    <<: *default-restart
+    logging: *default-logging
+    image: prom/prometheus:v2.53.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/alerting/prometheus-rules.yml:/etc/prometheus/rules.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - alertmanager
+    ports: []   # internal Docker network only; access via SSH tunnel
+
+  alertmanager:
+    <<: *default-restart
+    logging: *default-logging
+    image: prom/alertmanager:v0.27.0
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    volumes:
+      - ./infra/alerting/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports: []
+
+  grafana:
+    <<: *default-restart
+    logging: *default-logging
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-change-me-in-prod}"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    ports: []   # access via SSH tunnel: ssh -L 3000:grafana:3000 ops@<host>
+
+  loki:
+    <<: *default-restart
+    logging: *default-logging
+    image: grafana/loki:3.1.0
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ./infra/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    ports: []
+
+  tempo:
+    <<: *default-restart
+    logging: *default-logging
+    image: grafana/tempo:2.5.0
+    command: ["-config.file=/etc/tempo/tempo-config.yml"]
+    volumes:
+      - ./infra/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - tempo_data:/var/tempo
+    ports: []
+
+  # ── Log shipper (Promtail → Loki) ─────────────────────────────────────────
+
+  promtail:
+    <<: *default-restart
+    logging: *default-logging
+    image: grafana/promtail:3.1.0
+    command: ["-config.file=/etc/promtail/promtail-config.yml"]
+    volumes:
+      - ./infra/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
+  # ── Exporters ──────────────────────────────────────────────────────────────
+
+  postgres-exporter:
+    <<: *default-restart
+    logging: *default-logging
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-codex}:${POSTGRES_PASSWORD:-codex}@postgres:5432/${POSTGRES_DB:-codex_wrapper}?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports: []
+
+  redis-exporter:
+    <<: *default-restart
+    logging: *default-logging
+    image: oliver006/redis_exporter:v1.62.0
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+    depends_on:
+      - redis
+    ports: []
+
+  # ── Postgres backup (daily cron) ───────────────────────────────────────────
+
+  postgres-backup:
+    <<: *default-restart
+    logging: *default-logging
+    image: ghcr.io/${GHCR_ORG:-your-org}/codex-wrapper-backup:${IMAGE_TAG:-latest}
+    build:
+      context: infra/backup
+      dockerfile: Dockerfile.backup
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-codex}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-codex}"
+      POSTGRES_DB: "${POSTGRES_DB:-codex_wrapper}"
+      BACKUP_AGE_RECIPIENT: "${BACKUP_AGE_RECIPIENT:-}"
+      BACKUP_S3_BUCKET: "${BACKUP_S3_BUCKET:-}"
+      BACKUP_S3_ENDPOINT: "${BACKUP_S3_ENDPOINT:-}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+      AWS_DEFAULT_REGION: "${AWS_DEFAULT_REGION:-us-east-1}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  workspaces:
+    # tmpfs-backed volume: workspace dirs live only in RAM + do not survive
+    # reboots. The janitor (phase 08) cleans up per-job. Sized at 10 GB.
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=10g,uid=1000"
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+  caddy_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local
+  tempo_data:
+    driver: local

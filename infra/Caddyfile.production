@@ -1,0 +1,109 @@
+# Production Caddyfile — INTERNAL ONLY (v1, locked 2026-04-27)
+# Internal domain placeholder: ops fills in real domain before deploy.
+# TLS: Caddy auto-HTTPS via ACME (DNS-01 or HTTP-01).
+# For *.internal domains with no public DNS: configure step-ca as ACME CA
+# and set CADDY_CA_ROOT env var to the step-ca root cert.
+
+{
+    # Replace with ops email for ACME registration and expiry warnings.
+    email ops@example.com
+
+    # Uncomment to use internal step-ca instead of Let's Encrypt:
+    # acme_ca https://ca.internal/acme/acme/directory
+    # acme_ca_root /etc/caddy/root_ca.crt
+
+    # Metric admin endpoint — Docker network only (bound on 2019 internally).
+    admin 0.0.0.0:2019
+}
+
+# ── IP allowlist — Caddy Access Gate (Option A, default) ─────────────────────
+# Covers: RFC-1918 LANs + RFC-6598 Tailscale MagicDNS range.
+# Extend or replace with WireGuard tunnel CIDR as needed.
+(internal_only) {
+    @allowed {
+        remote_ip 10.0.0.0/8 192.168.0.0/16 100.64.0.0/10
+    }
+    @denied {
+        not remote_ip 10.0.0.0/8 192.168.0.0/16 100.64.0.0/10
+    }
+    handle @denied {
+        respond "Access denied" 403
+    }
+}
+
+# ── Main virtual host ─────────────────────────────────────────────────────────
+# Replace codex.internal with the real internal FQDN.
+codex.internal {
+
+    # Gzip compression for non-SSE responses.
+    encode gzip zstd
+
+    # Security headers.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        X-XSS-Protection          "1; mode=block"
+        # Remove Caddy server identity header.
+        -Server
+    }
+
+    # Apply IP allowlist to the entire vhost.
+    import internal_only
+
+    # ── Public surface: /v1/* only ────────────────────────────────────────────
+    handle /v1/* {
+        reverse_proxy gateway:8000 {
+            transport http {
+                # 1-hour timeout required for SSE streams (chat/completions).
+                # Default 60s kills long generations — most common deploy footgun.
+                response_header_timeout 1h
+                read_timeout            1h
+                dial_timeout            10s
+            }
+            # Disable response buffering so SSE events flush immediately.
+            flush_interval -1
+
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Real-IP       {remote_host}
+        }
+    }
+
+    # ── Health check — internal network only ──────────────────────────────────
+    handle /healthz {
+        reverse_proxy gateway:8000 {
+            transport http {
+                dial_timeout 5s
+            }
+        }
+    }
+
+    # ── Block admin and internal paths from all callers ───────────────────────
+    # These are handled directly on the Docker network; Caddy must never proxy them.
+    handle /admin/* {
+        respond "Not found" 404
+    }
+    handle /_internal/* {
+        respond "Not found" 404
+    }
+
+    # ── Deny everything else ──────────────────────────────────────────────────
+    handle {
+        respond "Not found" 404
+    }
+
+    # ── Access logging ────────────────────────────────────────────────────────
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size    100mb
+            roll_keep    10
+            roll_keep_for 720h
+        }
+        format json
+        # Authorization header is NOT logged (no {request.header.Authorization} in format).
+    }
+}
+
+# HTTP → HTTPS redirect is handled automatically by Caddy for any
+# vhost with TLS enabled. No explicit :80 block required.
