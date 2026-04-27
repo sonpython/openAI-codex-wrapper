@@ -1,0 +1,15 @@
+{"type":"thread.started","thread_id":"thread_1"}
+{"type":"turn.started","turn_id":"turn_1"}
+{"type":"item.started","item":{"type":"agent_message","id":"i1","text":"Hi"}}
+{"type":"item.started","item":{"type":"assistant_message","id":"i2","text":"Also hi"}}
+{"type":"item.started","item":{"type":"reasoning","id":"i3","text":"reasoning text"}}
+{"type":"item.started","item":{"type":"command_execution","id":"i4","command":"echo hi","status":"pending"}}
+{"type":"item.started","item":{"type":"file_change","id":"i5","path":"/workspace/foo.py","status":"created"}}
+{"type":"item.started","item":{"type":"file_read","id":"i6","path":"/workspace/bar.py"}}
+{"type":"item.started","item":{"type":"tool_use","id":"i7","name":"bash","arguments":{"cmd":"ls"}}}
+{"type":"item.started","item":{"type":"tool_result","id":"i8","result":"output"}}
+{"type":"item.started","item":{"type":"web_search","id":"i9","query":"python asyncio"}}
+{"type":"item.started","item":{"type":"mcp_server_startup","id":"i10"}}
+{"type":"item.started","item":{"type":"plan_update","id":"i11"}}
+{"type":"item.completed","item":{"type":"agent_message","id":"i1","text":"Hi"}}
+{"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":3}}

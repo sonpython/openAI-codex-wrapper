@@ -1,0 +1,225 @@
+"""
+Async subprocess wrapper that turns ``codex exec --json`` stdout into a
+typed async iterator of ``CodexEvent`` objects.
+
+C3 contract: runner is data-yielding only. SSE keepalive is the route
+layer's responsibility (uses ``gateway/sse_helpers.keepalive_wrap``).
+Runner yield cadence: one event per JSONL line; long agent_message gaps
+are normal — the keepalive layer handles them.
+
+C1 contract: ``--ephemeral`` is only appended when
+``settings.CODEX_HAS_EPHEMERAL`` is True (set by ops after
+``make verify-codex`` confirms the flag exists in the pinned codex
+version; defaults False so we fail-safe to no session persistence).
+
+Caller responsibilities:
+  - ``make_workspace`` / ``cleanup_workspace`` (runner never owns the dir).
+  - Wrap ``run_codex`` in ``asyncio.timeout`` or pass ``timeout`` arg.
+  - Catch ``WorkspaceTraversalError`` before calling run_codex.
+
+Subprocess safety:
+  - ``start_new_session=True`` so SIGTERM hits child + all descendants.
+  - Args passed as a list; never shell=True.
+  - stderr capped at 64 KiB ring buffer; no unbounded accumulation.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import os
+import signal
+from collections.abc import AsyncIterator
+from pathlib import Path
+
+import structlog
+
+from src.codex.events import CodexEvent, ErrorEvent, ErrorPayload, TurnCompleted, TurnFailed
+from src.codex.jsonl_parser import parse_line
+from src.settings import get_settings
+
+logger = structlog.get_logger(__name__)
+
+_STDERR_CAP = 64 * 1024  # 64 KiB ring buffer cap
+_STDERR_TAIL = 4 * 1024  # last 4 KiB included in synthesised ErrorEvent
+
+
+async def _drain_stderr(
+    stream: asyncio.StreamReader,
+    buf: bytearray,
+    cap: int,
+) -> None:
+    """Read stderr into a capped ring buffer until EOF."""
+    try:
+        async for chunk in stream:
+            buf.extend(chunk)
+            if len(buf) > cap:
+                # Drop oldest bytes — keep newest ``cap`` bytes
+                del buf[: len(buf) - cap]
+    except asyncio.CancelledError:
+        pass
+
+
+async def _terminate(proc: asyncio.subprocess.Process, grace: float, pgid: int) -> None:
+    """SIGTERM → SIGKILL escalation on the process group.
+
+    ``pgid`` must be captured at spawn (H-2: never re-derive via os.getpgid).
+    Falls back to proc.terminate()/kill() when pgid is 0.
+    """
+    if proc.returncode is not None:
+        return
+    try:
+        if pgid:
+            os.killpg(pgid, signal.SIGTERM)
+        else:
+            proc.terminate()
+    except (ProcessLookupError, PermissionError):
+        return
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=grace)
+    except TimeoutError:
+        try:
+            if pgid:
+                os.killpg(pgid, signal.SIGKILL)
+            else:
+                proc.kill()
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+async def run_codex(
+    prompt: str,
+    *,
+    allow_write: bool,
+    workspace_dir: Path,
+    timeout: float,
+    model: str | None = None,
+    search: bool = False,
+    request_id: str | None = None,
+) -> AsyncIterator[CodexEvent]:
+    """Spawn ``codex exec --json``; yield typed events; SIGTERM/SIGKILL on cancel/timeout."""
+    settings = get_settings()
+    sandbox = "workspace-write" if allow_write else "read-only"
+
+    # C-1 fix: build argv linearly — positional insert shifts tokens and can
+    # split argument pairs (e.g. insert(4,…) puts --ephemeral between
+    # "--color" and "never"). Append conditional flags explicitly.
+    argv = [
+        settings.codex_bin,
+        "exec",
+        "--json",
+        "--color",
+        "never",
+        "--ask-for-approval",
+        "never",
+        "--skip-git-repo-check",
+        "--cd",
+        str(workspace_dir),
+    ]
+
+    # C1: only append --ephemeral when verify-codex.sh has confirmed the flag
+    # exists in the pinned codex version. Defaults False → no session persistence
+    # claim; still functional via per-request --cd workspace.
+    if settings.codex_has_ephemeral:
+        argv.append("--ephemeral")
+
+    argv += ["--sandbox", sandbox]
+
+    if model:
+        argv += ["-m", model]
+    if search:
+        argv += ["--search"]
+
+    argv.append(prompt)
+
+    # C-2 fix: dual auth env vars for robustness.
+    # CODEX_HOME: codex 0.125+ reads auth from <CODEX_HOME>/auth.json directly.
+    # HOME fallback: older codex resolves auth at $HOME/.codex/auth.json —
+    #   set HOME=parent(auth_dir) so it works when auth_dir is /root/.codex.
+    #   (With legacy /codex-auth default, parent=/ is wrong; CODEX_HOME wins.)
+    # Recommended mount: ~/.codex:/root/.codex:ro + CODEX_AUTH_DIR=/root/.codex
+    env = {
+        **os.environ,
+        "CODEX_HOME": settings.codex_auth_dir,
+        "HOME": str(Path(settings.codex_auth_dir).parent),
+        "CODEX_REQUEST_ID": request_id or "",
+    }
+
+    log = logger.bind(
+        request_id=request_id,
+        workspace=str(workspace_dir),
+        allow_write=allow_write,
+    )
+    log.debug("codex.runner.spawning", argv=argv)
+
+    proc = await asyncio.create_subprocess_exec(
+        *argv,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,  # SIGTERM hits whole process group
+        env=env,
+    )
+    # H-2 fix: PGID == PID at spawn (start_new_session=True → child is group leader).
+    # Capture once; never re-derive via os.getpgid after spawn (PID reuse race).
+    _pgid: int = proc.pid
+
+    stderr_buf: bytearray = bytearray()
+    stderr_task = asyncio.create_task(
+        _drain_stderr(proc.stderr, stderr_buf, _STDERR_CAP),  # type: ignore[arg-type]
+        name=f"stderr-drain-{request_id or proc.pid}",
+    )
+
+    saw_terminal = False
+    try:
+        async with asyncio.timeout(timeout):
+            assert proc.stdout is not None  # always set when PIPE
+            async for raw in proc.stdout:
+                line = raw.decode("utf-8", errors="replace")
+                evt = parse_line(line)
+                if evt is None:
+                    continue
+                if isinstance(evt, TurnCompleted | TurnFailed | ErrorEvent):
+                    saw_terminal = True
+                yield evt
+
+    except TimeoutError:
+        log.warning("codex.runner.timeout", timeout=timeout)
+        await _terminate(proc, float(settings.job_cancel_grace_seconds), _pgid)
+        yield ErrorEvent(
+            type="error",
+            error=ErrorPayload(code="TIMEOUT", message=f"exceeded {timeout}s"),
+        )
+        return
+
+    except (asyncio.CancelledError, GeneratorExit):
+        log.info("codex.runner.cancelled")
+        await _terminate(proc, float(settings.job_cancel_grace_seconds), _pgid)
+        raise
+
+    finally:
+        stderr_task.cancel()
+        # H-1 fix: narrow suppression to CancelledError only (don't mask
+        # KeyboardInterrupt / SystemExit). Combine with Exception suppression
+        # so that proc.wait() errors don't silently swallow the CancelledError.
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await proc.wait()
+
+    rc = proc.returncode
+    log.debug("codex.runner.exited", exit_code=rc)
+
+    if rc is None:
+        # H-1: proc.wait() was interrupted; treat as abnormal exit.
+        log.warning("codex.runner.wait_interrupted")
+        return
+
+    if rc != 0 and not saw_terminal:
+        tail = stderr_buf[-_STDERR_TAIL:].decode("utf-8", errors="replace")
+        log.warning("codex.runner.nonzero_exit", exit_code=rc)
+        yield ErrorEvent(
+            type="error",
+            error=ErrorPayload(
+                code="EXIT_NONZERO",
+                message=f"codex exited {rc}",
+                details={"stderr_tail": tail},
+            ),
+        )
