@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     workspace_root: str = "/workspaces"  # Parent dir for ephemeral job dirs
     job_timeout_seconds: int = 900  # 15 min default
     job_cancel_grace_seconds: int = 5  # SIGTERM → SIGKILL window
+    job_default_timeout_seconds: int = 900  # default when request omits timeout_seconds
+    job_clone_timeout_seconds: int = 60  # git clone subprocess timeout
+    job_diff_max_bytes: int = 1_048_576  # 1MB cap on diff_blob in API responses
+
+    # ── Arq worker ─────────────────────────────────────────────────────────
+    arq_max_jobs: int = 4  # max concurrent jobs per worker process
+    # Defaults to redis_url if unset — allows separate Redis for job queue.
+    arq_redis_url: str | None = None
 
     # ── Chat completions ───────────────────────────────────────────────────
     # Default timeout for a single chat completion request (sync or stream).
@@ -71,24 +79,86 @@ class Settings(BaseSettings):
     # prompts before they reach the subprocess. Checked in build_prompt().
     chat_max_prompt_chars: int = 200_000
 
+    # ── Responses API (/v1/responses) ─────────────────────────────────────
+    # Timeout for a single Responses API request (sync or stream).
+    responses_timeout_seconds: int = 120
+    # Text-delta chunker window (chars). Codex emits agent_message in one
+    # shot; we chunk it to simulate streaming deltas. Phase-08 may improve
+    # granularity via tiktoken.
+    responses_chunk_chars: int = 50
+    # Maximum assembled input length (instructions + input) in characters.
+    responses_max_input_chars: int = 200_000
+
+    # ── Rate limiting ──────────────────────────────────────────────────────
+    # Bypass all rate-limit checks (dev/test only).  Refused at boot when
+    # wrapper_env=prod (see validator below).
+    rate_limit_bypass: bool = False
+    # Per-IP RPM cap for unauthenticated / malformed-token requests.
+    # Prevents argon2-burn DoS amplification (red-team C2 fix).
+    ip_pre_auth_rpm: int = 30
+    # Trust X-Forwarded-For header for client IP resolution.
+    # Set True only when running behind Caddy/nginx in prod.
+    trust_proxy: bool = False
+    # In-process tier-limits cache TTL in seconds (default 5 min).
+    tier_cache_ttl_seconds: int = 300
+
     # ── Auth ───────────────────────────────────────────────────────────────
     # Admin token protects /admin/* endpoints. Required in prod; defaults to
     # a placeholder in dev/test so unit tests don't raise on import.
     # Rotate periodically. Never log or expose this value.
     admin_token: SecretStr = SecretStr("dev-admin-token-replace-in-prod")
 
+    # ── Audit log ──────────────────────────────────────────────────────────
+    # When False (default): prompt stored as sha256 hash only — never raw text.
+    # Set True ONLY in dev for debugging; NEVER in prod.
+    audit_log_prompt: bool = False
+    # Rows older than this many days deleted by daily retention cron.
+    audit_log_retention_days: int = 90
+
+    # ── Stderr archive ─────────────────────────────────────────────────────
+    # Local directory for failed-job stderr archives (dev / no-S3 mode).
+    stderr_archive_local_dir: str = "/var/codex-stderr"
+    # Optional S3/B2 URL (e.g. s3://my-bucket/codex-stderr).
+    # If set, archives are written to S3 instead of local disk.
+    stderr_archive_s3_url: str | None = None
+    # Retention in days for stderr archives (S3 lifecycle / local cron).
+    stderr_retention_days: int = 14
+
+    # ── Alert webhooks ─────────────────────────────────────────────────────
+    # POST alerts here when Codex session goes unhealthy. None = disabled.
+    webhook_alert_url: str | None = None
+    # "slack" shapes payload as Slack blocks; "http" sends generic JSON.
+    webhook_alert_kind: str = "http"
+
+    # ── Input validation ───────────────────────────────────────────────────
+    # Maximum total prompt character count (chat + responses + jobs).
+    prompt_max_chars: int = 262_144  # 256k chars
+    # Timeout (seconds) for repo URL HEAD-check before enqueue.
+    repo_head_timeout: int = 5
+    # Redis TTL (seconds) to cache a positive HEAD result.
+    repo_head_cache_seconds: int = 300
+
     # ── Observability ──────────────────────────────────────────────────────
     log_level: str = "INFO"
     otel_exporter_otlp_endpoint: str | None = None  # None → no-op tracer
     otel_service_name: str = "codex-wrapper-gateway"
+    # Sampling ratio for OTEL traces (0.0–1.0). 0.1 = 10% of requests sampled.
+    # Error spans are always recorded regardless of this ratio.
+    otel_sampler_ratio: float = 0.1
+    # Enable Prometheus metrics endpoint.
+    metrics_enabled: bool = True
+    # Internal path for Prometheus scrape — Caddy MUST NOT reverse-proxy this.
+    internal_metrics_path: str = "/_internal/metrics"
 
     @model_validator(mode="after")
-    def _require_admin_token_in_prod(self) -> Settings:
-        """Raise if running in prod with the default placeholder admin token."""
+    def _prod_safety_checks(self) -> Settings:
+        """Enforce prod-only safety invariants at startup."""
         if self.wrapper_env == "prod":
             token = self.admin_token.get_secret_value()
             if token == "dev-admin-token-replace-in-prod":
                 raise ValueError("ADMIN_TOKEN must be set to a strong secret in prod environment")
+            if self.rate_limit_bypass:
+                raise ValueError("RATE_LIMIT_BYPASS must not be set to True in prod environment")
         return self
 
 

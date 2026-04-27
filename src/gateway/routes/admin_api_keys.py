@@ -7,7 +7,13 @@ This is the ONLY way to create API keys in v1 — no self-service signup.
 Endpoints:
   POST   /admin/api-keys          — create a new key (returns plaintext ONCE)
   GET    /admin/api-keys          — list all keys (prefix only, no plaintext/hash)
+  POST   /admin/api-keys/{id}/rotate — rotate key (old invalidated immediately)
   DELETE /admin/api-keys/{id}     — soft-revoke a key (sets revoked_at)
+
+Rotation policy (v1 — simple/immediate):
+  POST /rotate invalidates the old key immediately and returns new plaintext.
+  24h grace window is deferred to v1.1; document this clearly.
+  Rationale: immediate invalidation is safer; clients can update their key.
 
 Security:
   - Admin token compared with secrets.compare_digest (constant-time).
@@ -26,9 +32,10 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, EmailStr, field_validator
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.auth.hashing import generate_api_key
 from src.db.crud import api_keys as api_keys_crud
 from src.db.crud.users import get_or_create_by_email
 from src.db.engine import get_session
@@ -82,6 +89,14 @@ class ApiKeySummary(BaseModel):
     tier: str
     last_used_at: datetime | None
     revoked_at: datetime | None
+    created_at: datetime
+
+
+class RotateKeyResponse(BaseModel):
+    id: UUID
+    key: str  # new plaintext — returned ONCE; old key is immediately invalid
+    prefix: str
+    tier: str
     created_at: datetime
 
 
@@ -169,6 +184,65 @@ async def list_api_keys(
         )
         for k in keys
     ]
+
+
+@router.post("/api-keys/{key_id}/rotate", response_model=RotateKeyResponse, status_code=200)
+async def rotate_api_key(
+    key_id: UUID,
+    _: AdminTokenDep,
+    session: SessionDep,
+) -> RotateKeyResponse:
+    """Rotate an API key: generate new key, invalidate old one immediately.
+
+    The new plaintext is returned exactly once.
+    The old key is invalidated immediately (revoked_at = now()).
+
+    v1 design decision: immediate invalidation (no 24h grace).
+    Rationale: simpler, safer — clients should update promptly.
+    24h grace window deferred to v1.1 as a tier-tunable feature.
+    """
+    existing = await api_keys_crud.get_by_id(session, key_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="api_key_not_found")
+
+    old_prefix = existing.prefix
+
+    # Generate new key material
+    plaintext, new_prefix, new_hash = generate_api_key()
+
+    # Update in-place: replace hash + prefix, set revoked_at on old to now()
+    # We overwrite the existing row (simpler than creating a new row).
+    await session.execute(
+        update(ApiKey)
+        .where(ApiKey.id == key_id)
+        .values(
+            key_hash=new_hash,
+            prefix=new_prefix,
+            revoked_at=None,  # reset revoked state if it was revoked
+            last_used_at=None,
+        )
+    )
+    await session.commit()
+
+    # Refresh to get updated values
+    refreshed = await api_keys_crud.get_by_id(session, key_id)
+    if refreshed is None:  # pragma: no cover
+        raise HTTPException(status_code=500, detail="rotate_failed")
+
+    logger.info(
+        "admin.api_key_rotated",
+        key_id=str(key_id),
+        old_prefix=old_prefix,
+        new_prefix=new_prefix,
+    )
+
+    return RotateKeyResponse(
+        id=refreshed.id,
+        key=plaintext,
+        prefix=refreshed.prefix,
+        tier=refreshed.tier,
+        created_at=refreshed.created_at,
+    )
 
 
 @router.delete("/api-keys/{key_id}", status_code=204, response_model=None)

@@ -37,6 +37,7 @@ from src.auth.errors import (
 )
 from src.db.crud.api_keys import get_active_by_prefix_and_verify, update_last_used_fire_and_forget
 from src.db.engine import main_session
+from src.observability.metrics import AUTH_REJECTIONS
 
 logger = structlog.get_logger(__name__)
 
@@ -95,6 +96,7 @@ class AuthMiddleware:
 
         plaintext = extract_bearer(headers)
         if plaintext is None:
+            AUTH_REJECTIONS.labels(reason="missing_bearer").inc()
             response = invalid_api_key_response()
             await response(scope, receive, send)
             return
@@ -120,6 +122,7 @@ class AuthMiddleware:
             return
 
         if api_key is None:
+            AUTH_REJECTIONS.labels(reason="invalid_key").inc()
             response = invalid_api_key_response()
             await response(scope, receive, send)
             return

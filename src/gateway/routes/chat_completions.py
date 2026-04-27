@@ -15,6 +15,7 @@ to prevent Caddy/CDN/AWS-ALB idle-timeout kills.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from uuid import uuid4
 
 import structlog
@@ -25,6 +26,7 @@ from starlette.background import BackgroundTask
 from src.chat.prompt_builder import build_prompt
 from src.chat.stream_handler import stream_chunks
 from src.chat.sync_handler import handle_sync
+from src.chat.usage_estimator import _count_tokens
 from src.codex.runner import run_codex
 from src.codex.workspace import cleanup_workspace, make_workspace
 from src.gateway.schemas.chat_request import ChatCompletionRequest
@@ -111,6 +113,11 @@ async def chat_completions(
         # Starlette aborts before the consumer starts iteration (e.g. an error
         # thrown before the first chunk reaches the client).  Generator-finally
         # alone doesn't guarantee cleanup in that scenario.
+        #
+        # C1 fix: Wrap the stream to capture usage after [DONE] is emitted so
+        # UsageTrackingMiddleware can read request.state.usage for TPM true-up
+        # and monthly quota increment.  Prompt tokens are estimated once;
+        # completion tokens are derived from the SSE output bytes (rough).
         runner = run_codex(
             prompt,
             allow_write=False,
@@ -121,8 +128,31 @@ async def chat_completions(
         raw_stream = stream_chunks(req, prompt, runner)
         kept = keepalive_wrap(raw_stream, interval=15.0)
 
+        async def _stream_with_usage_capture() -> AsyncIterator[bytes]:
+            """Exhaust `kept` and write usage to request.state after stream ends.
+
+            We accumulate the text content bytes from SSE data lines to estimate
+            completion tokens.  This is an approximation — the canonical
+            token count comes from the tiktoken counter inside stream_chunks —
+            but it is sufficient for TPM true-up purposes.
+            """
+            completion_bytes = 0
+            async for chunk in kept:
+                # Count non-keepalive SSE payload bytes as a proxy for tokens.
+                if chunk.startswith(b"data: ") and not chunk.startswith(b"data: [DONE]"):
+                    completion_bytes += len(chunk)
+                yield chunk
+            # Estimate from prompt + completion output bytes.
+            prompt_tokens = _count_tokens(prompt)
+            completion_tokens = max(1, completion_bytes // 4)
+            request.state.usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            }
+
         return StreamingResponse(
-            kept,
+            _stream_with_usage_capture(),
             media_type="text/event-stream",
             headers=sse_headers,
             background=BackgroundTask(cleanup_workspace, ws),
@@ -138,6 +168,15 @@ async def chat_completions(
             request_id=job_id,
         )
         result = await handle_sync(req, prompt, runner)
+        # C1: expose actual token counts so UsageTrackingMiddleware can true-up
+        # TPM and increment monthly quota.  sync_handler.estimate() populates
+        # result.usage with prompt_tokens + completion_tokens.
+        usage = result.usage
+        request.state.usage = {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        }
         return JSONResponse(content=result.model_dump())
     except Exception:
         logger.exception("chat.sync.unhandled_error", job_id=job_id)

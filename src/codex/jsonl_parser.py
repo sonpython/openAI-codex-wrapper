@@ -21,6 +21,7 @@ import structlog
 from pydantic import TypeAdapter, ValidationError
 
 from src.codex.events import CodexEvent
+from src.observability.metrics import CODEX_EVENT_TOTAL
 
 logger = structlog.get_logger(__name__)
 
@@ -55,7 +56,9 @@ def parse_line(line: str) -> CodexEvent | None:
         return None
 
     try:
-        return _adapter.validate_python(obj)
+        event = _adapter.validate_python(obj)
+        CODEX_EVENT_TOTAL.labels(type=event.type).inc()
+        return event
     except ValidationError as exc:
         # Unknown or schema-mismatched event type — forward-compat skip.
         logger.debug(

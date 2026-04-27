@@ -29,6 +29,7 @@ import asyncio
 import contextlib
 import os
 import signal
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -36,6 +37,11 @@ import structlog
 
 from src.codex.events import CodexEvent, ErrorEvent, ErrorPayload, TurnCompleted, TurnFailed
 from src.codex.jsonl_parser import parse_line
+from src.observability.metrics import (
+    CODEX_ACTIVE_SUBPROCESS,
+    CODEX_SUBPROCESS_DURATION,
+    CODEX_SUBPROCESS_EXIT_CODE,
+)
 from src.settings import get_settings
 
 logger = structlog.get_logger(__name__)
@@ -152,6 +158,8 @@ async def run_codex(
     )
     log.debug("codex.runner.spawning", argv=argv)
 
+    _run_start = time.monotonic()
+    CODEX_ACTIVE_SUBPROCESS.inc()
     proc = await asyncio.create_subprocess_exec(
         *argv,
         stdout=asyncio.subprocess.PIPE,
@@ -203,9 +211,15 @@ async def run_codex(
         # so that proc.wait() errors don't silently swallow the CancelledError.
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await proc.wait()
+        CODEX_ACTIVE_SUBPROCESS.dec()
+        CODEX_SUBPROCESS_DURATION.labels(
+            exit_code_class="0" if (proc.returncode or 0) == 0 else "nonzero"
+        ).observe(time.monotonic() - _run_start)
 
     rc = proc.returncode
     log.debug("codex.runner.exited", exit_code=rc)
+    if rc is not None:
+        CODEX_SUBPROCESS_EXIT_CODE.labels(code=str(rc)).inc()
 
     if rc is None:
         # H-1: proc.wait() was interrupted; treat as abnormal exit.

@@ -22,8 +22,4 @@ COPY scripts ./scripts
 RUN chmod +x scripts/*.sh
 COPY alembic.ini ./
 
-# WorkerSettings module is created in phase 05.
-# Using a placeholder entrypoint here so the image builds now.
-# Phase 05 replaces this CMD with the real arq worker invocation.
-CMD ["uv", "run", "python", "-c", \
-     "import time; print('worker placeholder — phase 05 replaces this'); time.sleep(86400)"]
+CMD ["uv", "run", "arq", "src.workers.arq_worker.WorkerSettings"]
