@@ -1,0 +1,5 @@
+{"type":"thread.started","thread_id":"th_test"}
+{"type":"turn.started","turn_id":"turn_1"}
+{"type":"item.started","item":{"type":"agent_message","id":"item_1","text":""}}
+{"type":"item.completed","item":{"type":"agent_message","id":"item_1","text":"OK"}}
+{"type":"turn.completed","usage":{"input_tokens":42,"output_tokens":7,"cached_input_tokens":5,"reasoning_tokens":3}}

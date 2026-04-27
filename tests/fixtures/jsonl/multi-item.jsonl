@@ -1,0 +1,9 @@
+{"type":"thread.started","thread_id":"th_test"}
+{"type":"turn.started","turn_id":"turn_1"}
+{"type":"item.started","item":{"type":"agent_message","id":"item_1","text":""}}
+{"type":"item.completed","item":{"type":"agent_message","id":"item_1","text":"First paragraph of the response."}}
+{"type":"item.started","item":{"type":"agent_message","id":"item_2","text":""}}
+{"type":"item.completed","item":{"type":"agent_message","id":"item_2","text":"Second paragraph with more detail."}}
+{"type":"item.started","item":{"type":"agent_message","id":"item_3","text":""}}
+{"type":"item.completed","item":{"type":"agent_message","id":"item_3","text":"Third paragraph concluding the response."}}
+{"type":"turn.completed","usage":{"input_tokens":15,"output_tokens":25,"cached_input_tokens":0,"reasoning_tokens":0}}

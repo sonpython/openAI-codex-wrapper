@@ -1,0 +1,19 @@
+{
+  "name": "codex-wrapper-node-compat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node.js SDK compatibility tests for codex-wrapper",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "openai": "^4.50.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

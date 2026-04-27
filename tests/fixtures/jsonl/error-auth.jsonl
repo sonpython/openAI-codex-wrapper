@@ -1,0 +1,3 @@
+{"type":"thread.started","thread_id":"th_test"}
+{"type":"error","error":{"code":"AUTH_INVALID","message":"session expired"}}
+# exit: 1

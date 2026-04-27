@@ -1,0 +1,40 @@
+[
+  {
+    "id": "echo-hello",
+    "prompt": "ECHO: hello",
+    "description": "Plain text reply — simplest happy path",
+    "expected_event_types": ["thread.started", "turn.started", "item.started", "item.completed", "turn.completed"]
+  },
+  {
+    "id": "multi-paragraph",
+    "prompt": "MULTI_ITEM write a three-paragraph explanation",
+    "description": "Multi-paragraph response — forces multiple agent_message items",
+    "expected_event_types": ["thread.started", "turn.started", "item.started", "item.completed", "turn.completed"]
+  },
+  {
+    "id": "reasoning-first",
+    "prompt": "REASON_FIRST what is the best sorting algorithm and why",
+    "description": "Reasoning-eligible prompt — codex emits reasoning item then agent_message",
+    "expected_event_types": ["thread.started", "turn.started", "item.started", "item.completed", "turn.completed"]
+  },
+  {
+    "id": "with-usage",
+    "prompt": "WITH_USAGE count tokens in this sentence",
+    "description": "turn.completed.usage fully populated — exercises token accounting",
+    "expected_event_types": ["thread.started", "turn.started", "item.started", "item.completed", "turn.completed"]
+  },
+  {
+    "id": "big-output",
+    "prompt": "BIG_OUTPUT generate a very long response",
+    "description": "Long output > 10k chars — exercises streaming chunking path",
+    "expected_event_types": ["thread.started", "turn.started", "item.started", "item.completed", "turn.completed"]
+  },
+  {
+    "id": "error-auth",
+    "prompt": "ERROR_AUTH trigger authentication failure",
+    "description": "Auth error negative case — expect error event with AUTH_INVALID code",
+    "expected_event_types": ["thread.started", "error"],
+    "expect_error": true,
+    "expected_error_code": "AUTH_INVALID"
+  }
+]

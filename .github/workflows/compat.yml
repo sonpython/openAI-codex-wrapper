@@ -1,0 +1,95 @@
+name: compat
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main", "dev"]
+
+jobs:
+  compat:
+    name: SDK Compat (Python + Node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Validate docker-compose.test.yml syntax
+        run: docker compose -f docker-compose.test.yml config > /dev/null
+
+      - name: Build and start test stack
+        run: docker compose -f docker-compose.test.yml up -d --build --wait
+        timeout-minutes: 10
+
+      - name: Wait for gateway healthz
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8001/healthz; then
+              echo "Gateway healthy"
+              exit 0
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+          echo "Gateway did not become healthy in time"
+          docker compose -f docker-compose.test.yml logs gateway-test
+          exit 1
+
+      - name: Run database migrations in gateway container
+        run: |
+          docker compose -f docker-compose.test.yml exec -T gateway-test \
+            uv run alembic upgrade head
+
+      - name: Provision test API key
+        id: provision_key
+        run: |
+          KEY=$(curl -sf -X POST http://localhost:8001/admin/api-keys \
+            -H "X-Admin-Token: test-admin-token" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"ci-compat-key","tier":"pro"}' \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['plaintext_key'])")
+          echo "api_key=$KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Python SDK compat tests
+        run: |
+          docker compose -f docker-compose.test.yml exec -T \
+            -e COMPAT_BASE_URL=http://gateway-test:8000 \
+            -e COMPAT_ADMIN_TOKEN=test-admin-token \
+            -e COMPAT_EXTERNAL_STACK=1 \
+            test-runner \
+            uv run pytest tests/compat/test-python-sdk.py -v \
+              --cov=src/gateway --cov=src/codex --cov=src/workers \
+              --cov-report=xml:/app/coverage.xml \
+              --cov-fail-under=75
+
+      - name: Node SDK compat tests
+        run: |
+          docker compose -f docker-compose.test.yml exec -T \
+            -e COMPAT_BASE_URL=http://gateway-test:8000 \
+            -e COMPAT_API_KEY=${{ steps.provision_key.outputs.api_key }} \
+            test-runner \
+            sh -c "cd tests/compat/test_node_sdk && pnpm test"
+
+      - name: Copy coverage report from container
+        if: always()
+        run: |
+          docker compose -f docker-compose.test.yml cp \
+            test-runner:/app/coverage.xml ./coverage.xml 2>/dev/null || true
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-compat
+          path: coverage.xml
+          if-no-files-found: warn
+
+      - name: Tear down test stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v

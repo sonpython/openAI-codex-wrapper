@@ -1,0 +1,136 @@
+# Test composition — mirrors prod compose minus caddy and otel-collector.
+# Uses mock-codex (deterministic JSONL) instead of real codex binary.
+# Networks are isolated from prod compose (distinct network name).
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d --wait
+#   docker compose -f docker-compose.test.yml run --rm test-runner \
+#       pytest tests/compat -v
+#   docker compose -f docker-compose.test.yml down -v
+
+name: codex-wrapper-test
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: codex
+      POSTGRES_PASSWORD: codex
+      POSTGRES_DB: codex_wrapper_test
+    tmpfs:
+      - /var/lib/postgresql/data   # ephemeral — no leftover state between runs
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codex -d codex_wrapper_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+    networks:
+      - test-net
+
+  redis-test:
+    image: redis:7-alpine
+    command: redis-server --save "" --loglevel warning
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+    networks:
+      - test-net
+
+  # ── Gateway (mock-codex injected) ───────────────────────────────────────────
+
+  gateway-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    environment:
+      DATABASE_URL: postgresql+asyncpg://codex:codex@postgres-test:5432/codex_wrapper_test
+      REDIS_URL: redis://redis-test:6379/0
+      WRAPPER_ENV: test
+      ADMIN_TOKEN: test-admin-token
+      # Point gateway at mock-codex instead of real binary
+      CODEX_BIN: /app/tests/fixtures/mock-codex.py
+      # Fake auth dir — mock-codex never reads it, but readiness check may look for it
+      CODEX_AUTH_DIR: /tmp/fake-codex-auth
+      LOG_LEVEL: WARNING
+    volumes:
+      - ./tests/fixtures:/app/tests/fixtures:ro
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    ports:
+      - "8001:8000"   # expose on 8001 to avoid clash with prod stack on 8000
+    networks:
+      - test-net
+
+  # ── Worker (mock-codex injected) ────────────────────────────────────────────
+
+  worker-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      DATABASE_URL: postgresql+asyncpg://codex:codex@postgres-test:5432/codex_wrapper_test
+      REDIS_URL: redis://redis-test:6379/0
+      WRAPPER_ENV: test
+      CODEX_BIN: /app/tests/fixtures/mock-codex.py
+      CODEX_AUTH_DIR: /tmp/fake-codex-auth
+      LOG_LEVEL: WARNING
+    volumes:
+      - ./tests/fixtures:/app/tests/fixtures:ro
+      - test-workspaces:/workspaces
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    networks:
+      - test-net
+
+  # ── Test runner ─────────────────────────────────────────────────────────────
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-runner
+    environment:
+      COMPAT_BASE_URL: http://gateway-test:8000
+      COMPAT_ADMIN_TOKEN: test-admin-token
+      COMPAT_EXTERNAL_STACK: "1"   # runner talks to gateway-test; no compose up/down
+      DATABASE_URL: postgresql+asyncpg://codex:codex@postgres-test:5432/codex_wrapper_test
+      REDIS_URL: redis://redis-test:6379/0
+    volumes:
+      - .:/app
+      # Preserve pnpm store across rebuilds for faster Node installs
+      - pnpm-store:/root/.local/share/pnpm/store
+    depends_on:
+      gateway-test:
+        condition: service_healthy
+    # Keep alive so `docker compose exec` can invoke pytest / pnpm
+    command: ["tail", "-f", "/dev/null"]
+    networks:
+      - test-net
+
+networks:
+  test-net:
+    driver: bridge
+
+volumes:
+  test-workspaces:
+    driver: local
+  pnpm-store:
+    driver: local

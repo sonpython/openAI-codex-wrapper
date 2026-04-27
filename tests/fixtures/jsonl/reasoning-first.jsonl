@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"th_test"}
+{"type":"turn.started","turn_id":"turn_1"}
+{"type":"item.started","item":{"type":"reasoning","id":"item_r1","text":""}}
+{"type":"item.completed","item":{"type":"reasoning","id":"item_r1","text":"I need to think about this carefully. The user wants a well-reasoned answer."}}
+{"type":"item.started","item":{"type":"agent_message","id":"item_1","text":""}}
+{"type":"item.completed","item":{"type":"agent_message","id":"item_1","text":"After careful consideration, here is my answer."}}
+{"type":"turn.completed","usage":{"input_tokens":12,"output_tokens":18,"cached_input_tokens":0,"reasoning_tokens":10}}
