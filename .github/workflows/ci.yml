@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    name: Lint + Type + Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Ruff lint
+        run: uv run ruff check src tests
+
+      - name: Ruff format check
+        run: uv run ruff format --check src tests
+
+      - name: Mypy type check
+        run: uv run mypy src
+
+      - name: Unit tests
+        run: uv run pytest -q tests/unit
+        env:
+          # Unit tests override these via conftest; providing dummy values
+          # satisfies pydantic-settings validation for any tests that
+          # construct Settings() without env overrides.
+          DATABASE_URL: "postgresql+asyncpg://test:test@localhost:5432/test"
+          REDIS_URL: "redis://localhost:6379/0"
+
+      - name: Verify shell script syntax
+        run: bash -n scripts/verify-codex.sh

@@ -1,0 +1,6 @@
+# Dev profile — serves on localhost with automatic self-signed TLS.
+# Prod TLS (ACME / Let's Encrypt) is added in phase 10 via compose override.
+
+localhost {
+    reverse_proxy gateway:8000
+}

@@ -1,0 +1,29 @@
+FROM python:3.12-slim
+
+# Same base as gateway + git (codex CLI needs git for some workspace operations)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        git \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pin same codex CLI version as gateway — both must agree on JSONL schema.
+RUN npm install -g @openai/codex@0.125.0
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+RUN pip install --no-cache-dir uv && uv sync --frozen --no-dev
+
+COPY src ./src
+COPY scripts ./scripts
+RUN chmod +x scripts/*.sh
+COPY alembic.ini ./
+
+# WorkerSettings module is created in phase 05.
+# Using a placeholder entrypoint here so the image builds now.
+# Phase 05 replaces this CMD with the real arq worker invocation.
+CMD ["uv", "run", "python", "-c", \
+     "import time; print('worker placeholder — phase 05 replaces this'); time.sleep(86400)"]

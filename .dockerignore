@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# uv
+.uv/
+
+# Test / coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Env files — never copy secrets into image
+.env
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# Dev tools
+.claude/
+plans/
+docs/
+*.md
+!README.md
+
+# macOS
+.DS_Store
+
+# Codex auth — mounted at runtime as RO bind, never baked into image
+.codex/

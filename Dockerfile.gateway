@@ -1,0 +1,31 @@
+FROM python:3.12-slim
+
+# Install system dependencies: curl for Node setup, nodejs 20 for codex CLI
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pin exact codex CLI version — verify-codex.sh asserts this at runtime.
+# @0.125.0 is the version that researcher-01 confirmed has stable JSONL-on-stdout.
+RUN npm install -g @openai/codex@0.125.0
+
+WORKDIR /app
+
+# Install Python dependencies via uv (reproducible from lockfile)
+COPY pyproject.toml uv.lock ./
+RUN pip install --no-cache-dir uv && uv sync --frozen --no-dev
+
+COPY src ./src
+COPY scripts ./scripts
+RUN chmod +x scripts/*.sh
+COPY alembic.ini ./
+
+EXPOSE 8000
+
+# Factory pattern required: FastAPI app created at import time with lifespan.
+CMD ["uv", "run", "uvicorn", "src.gateway.app:create_app", \
+     "--factory", "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "1", "--log-level", "warning"]
