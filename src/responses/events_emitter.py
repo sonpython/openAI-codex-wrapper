@@ -143,6 +143,35 @@ class ResponseEmitter:
             )
 
         elif isinstance(evt, ItemCompleted) and isinstance(evt.item, AgentMessageItem):
+            # Real Codex 0.125 skips ItemStarted for agent_message and emits only
+            # ItemCompleted. Lazy-emit the .added events here so every .done has
+            # a matching .added per OpenAI Responses API contract.
+            if not self._item_open:
+                self._current_item_id = evt.item.id or self._current_item_id
+                self._current_output_index = self._next_output_index
+                self._item_open = True
+                yield self._emit(
+                    "response.output_item.added",
+                    {
+                        "output_index": self._current_output_index,
+                        "item": {
+                            "id": self._current_item_id,
+                            "type": "message",
+                            "status": "in_progress",
+                            "role": "assistant",
+                            "content": [],
+                        },
+                    },
+                )
+                yield self._emit(
+                    "response.content_part.added",
+                    {
+                        "output_index": self._current_output_index,
+                        "content_index": 0,
+                        "item_id": self._current_item_id,
+                        "part": {"type": "output_text", "text": "", "annotations": []},
+                    },
+                )
             yield from emit_agent_message_events(
                 evt.item,
                 emit=self._emit,

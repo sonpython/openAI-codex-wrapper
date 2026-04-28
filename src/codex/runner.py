@@ -110,14 +110,16 @@ async def run_codex(
     # C-1 fix: build argv linearly — positional insert shifts tokens and can
     # split argument pairs (e.g. insert(4,…) puts --ephemeral between
     # "--color" and "never"). Append conditional flags explicitly.
+    # NOTE: codex 0.125.0 does NOT expose --ask-for-approval (researcher-01 drift).
+    # Use --full-auto for non-interactive sandboxed execution; --sandbox below
+    # narrows the policy to read-only or workspace-write per request.
     argv = [
         settings.codex_bin,
         "exec",
         "--json",
         "--color",
         "never",
-        "--ask-for-approval",
-        "never",
+        "--full-auto",
         "--skip-git-repo-check",
         "--cd",
         str(workspace_dir),

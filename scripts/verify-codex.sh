@@ -39,7 +39,7 @@ REQUIRED_FLAGS=(
     json
     sandbox
     cd
-    ask-for-approval
+    full-auto
     color
 )
 for f in "${REQUIRED_FLAGS[@]}"; do
@@ -55,7 +55,7 @@ OUT=$(echo "" | timeout 10 codex exec \
     --json --color never \
     --skip-git-repo-check \
     --sandbox read-only \
-    --ask-for-approval never \
+    --full-auto \
     "say pong" 2>/dev/null | head -n 1 || true)
 
 if [[ -z "$OUT" ]]; then

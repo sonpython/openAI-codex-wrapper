@@ -102,8 +102,7 @@ async def test_argv_base_flags_always_present(tmp_path: Path) -> None:
     assert "codex" in captured_argv
     assert "--json" in captured_argv
     assert "--skip-git-repo-check" in captured_argv
-    assert "--ask-for-approval" in captured_argv
-    assert "never" in captured_argv
+    assert "--full-auto" in captured_argv
     assert "--ephemeral" not in captured_argv  # not set
 
 
