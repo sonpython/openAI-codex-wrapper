@@ -199,8 +199,54 @@ def test_format_tools_prompt_single_tool_contains_name() -> None:
 
 def test_format_tools_prompt_contains_required_param_marker() -> None:
     prompt = format_tools_prompt(SAMPLE_TOOLS[:1])
-    # Required params should be marked with '*'
-    assert "*entity_id" in prompt
+    # Full JSON schema is inlined so nested shapes survive — required arrays included.
+    assert "entity_id" in prompt
+    assert '"required":["entity_id"]' in prompt
+    assert "parameters:" in prompt
+
+
+def test_format_tools_prompt_inlines_nested_schema() -> None:
+    """Regression: nested object/array schemas (e.g. HA EOC execute_services list
+    items) must be visible to the model, otherwise the model omits required keys
+    such as ``domain`` / ``service`` / ``service_data`` and HA raises KeyError."""
+    nested_tool = [
+        {
+            "type": "function",
+            "function": {
+                "name": "execute_services",
+                "description": "Execute HA services.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "list": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "domain": {"type": "string"},
+                                    "service": {"type": "string"},
+                                    "service_data": {
+                                        "type": "object",
+                                        "properties": {
+                                            "entity_id": {"type": "string"}
+                                        },
+                                        "required": ["entity_id"],
+                                    },
+                                },
+                                "required": ["domain", "service", "service_data"],
+                            },
+                        }
+                    },
+                },
+            },
+        }
+    ]
+    prompt = format_tools_prompt(nested_tool)
+    assert "execute_services" in prompt
+    # Nested item schema keys must reach the model.
+    assert "domain" in prompt
+    assert "service_data" in prompt
+    assert '"required":["domain","service","service_data"]' in prompt
 
 
 def test_format_tools_prompt_empty_list_returns_empty() -> None:

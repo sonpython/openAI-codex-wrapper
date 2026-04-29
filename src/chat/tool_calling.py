@@ -25,6 +25,12 @@ def format_tools_prompt(
 ) -> str:
     """Generate the system-prompt section that instructs Codex on tool use.
 
+    Each tool's ``parameters`` JSON schema is inlined verbatim (compact JSON) so
+    the model sees nested object/array shapes — required for tools like HA EOC's
+    ``execute_services`` whose ``list`` items have their own required keys
+    (``domain``, ``service``, ``service_data``). Earlier flat ``param: type``
+    rendering hid those nested schemas and caused the model to omit keys.
+
     Args:
         tools:       List of tool definitions from the OpenAI request (each has
                      ``type="function"`` and a ``function`` sub-dict with name,
@@ -35,19 +41,6 @@ def format_tools_prompt(
     Returns:
         A string to be prepended as a system message to the prompt, or "" if
         tool injection should be skipped (tool_choice="none" or empty tools list).
-
-    Example output:
-        Available tools (only use when the user's request requires an action):
-        - light_turn_off(entity_id: string): Turn off a light entity
-        - light_turn_on(entity_id: string): Turn on a light entity
-
-        INSTRUCTIONS:
-        - To call tool(s), reply ONLY with this JSON (no other text):
-          {"tool_calls": [{"name": "...", "arguments": {...}}, ...]}
-        - For multiple simultaneous actions, include multiple objects in the array.
-        - If no tool is needed, reply naturally as plain text.
-        - NEVER mix JSON with prose or explanation.
-        - NEVER invent tool names not listed above.
     """
     if not tools:
         return ""
@@ -61,24 +54,19 @@ def format_tools_prompt(
         fn = tool.get("function", {})
         name: str = fn.get("name", "unknown")
         description: str = fn.get("description", "")
-        params: dict[str, Any] = fn.get("parameters", {})
-        properties: dict[str, Any] = params.get("properties", {})
-        required: list[str] = params.get("required", [])
-
-        # Format: name(param: type, *param: type): description
-        param_parts: list[str] = []
-        for prop_name, prop_schema in properties.items():
-            prop_type = prop_schema.get("type", "string")
-            marker = "*" if prop_name in required else ""
-            param_parts.append(f"{marker}{prop_name}: {prop_type}")
-        params_str = ", ".join(param_parts)
-        lines.append(f"- {name}({params_str}): {description}")
+        params: dict[str, Any] = fn.get("parameters", {}) or {}
+        params_json = json.dumps(params, separators=(",", ":"), ensure_ascii=False)
+        lines.append(f"- {name}: {description}")
+        lines.append(f"  parameters: {params_json}")
 
     lines += [
         "",
         "INSTRUCTIONS:",
         "- To call tool(s), reply ONLY with this exact JSON format (no other text):",
         '  {"tool_calls": [{"name": "TOOL_NAME", "arguments": {KEY: VALUE}}, ...]}',
+        '- "arguments" MUST conform EXACTLY to that tool\'s parameters schema, '
+        "including every required field and correct nested structure (objects "
+        "inside arrays must include all their required keys for EVERY item).",
         "- For multiple simultaneous actions, include multiple objects in the array.",
         "- If no tool is needed, reply naturally as plain text.",
         "- NEVER mix JSON with prose or any explanation.",
