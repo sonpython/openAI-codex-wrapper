@@ -80,9 +80,6 @@ def test_unknown_fields_silently_ignored() -> None:
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("tools", [{"type": "function", "function": {"name": "f"}}]),
-        ("functions", [{"name": "fn"}]),
-        ("tool_choice", "auto"),
         ("response_format", {"type": "json_object"}),
         ("logprobs", True),
         ("stop", "\n"),
@@ -95,6 +92,21 @@ def test_rejected_fields_raise_validation_error(field: str, value: object) -> No
         ChatCompletionRequest(**{**_valid(), field: value})
     errors = exc_info.value.errors()
     assert any("unsupported" in str(e.get("msg", "")).lower() for e in errors)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("tools", [{"type": "function", "function": {"name": "f"}}]),
+        ("functions", [{"name": "fn"}]),
+        ("tool_choice", "auto"),
+    ],
+)
+def test_tool_fields_silently_ignored(field: str, value: object) -> None:
+    """Many clients (HA Extended OpenAI, langchain) always send these — accept
+    silently rather than break the entire client integration."""
+    req = ChatCompletionRequest(**{**_valid(), field: value})
+    assert req is not None  # passed validation
 
 
 def test_n_greater_than_1_rejected() -> None:

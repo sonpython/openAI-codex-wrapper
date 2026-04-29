@@ -191,8 +191,6 @@ def test_stream_first_chunk_has_role(client: TestClient) -> None:
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("tools", [{"type": "function", "function": {"name": "f"}}]),
-        ("functions", [{"name": "fn"}]),
         ("logprobs", True),
         ("n", 3),
         ("response_format", {"type": "json_object"}),

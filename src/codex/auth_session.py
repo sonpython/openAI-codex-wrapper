@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -37,7 +38,9 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
-async def _probe_cli(codex_bin: str, timeout: int) -> tuple[bool, datetime | None]:
+async def _probe_cli(
+    codex_bin: str, timeout: int, auth_dir: str | None = None
+) -> tuple[bool, datetime | None]:
     """Try ``codex auth status`` then ``codex login status``.
 
     Returns (True, None) on exit-0, (False, None) when both variants tried and
@@ -51,6 +54,11 @@ async def _probe_cli(codex_bin: str, timeout: int) -> tuple[bool, datetime | Non
     error (Python CLIs), exit 128+N = killed by signal N. We do NOT gate on a
     specific code; we try both and trust exit-0 exclusively.
     """
+    # Pass CODEX_HOME so probe looks at the mounted auth dir, not the
+    # container's $HOME (which lacks auth.json under the gateway's root user).
+    probe_env = {**os.environ}
+    if auth_dir:
+        probe_env["CODEX_HOME"] = auth_dir
     for subargs in (["auth", "status"], ["login", "status"]):
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -58,6 +66,7 @@ async def _probe_cli(codex_bin: str, timeout: int) -> tuple[bool, datetime | Non
                 *subargs,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=probe_env,
             )
             try:
                 await asyncio.wait_for(proc.wait(), timeout=float(timeout))
@@ -130,7 +139,11 @@ async def verify_codex_session() -> tuple[bool, datetime | None]:
         when determined via CLI exit code only.
     """
     settings = get_settings()
-    ok, expires_at = await _probe_cli(settings.codex_bin, settings.codex_auth_probe_timeout_seconds)
+    ok, expires_at = await _probe_cli(
+        settings.codex_bin,
+        settings.codex_auth_probe_timeout_seconds,
+        auth_dir=settings.codex_auth_dir,
+    )
     if ok:
         return True, expires_at
 

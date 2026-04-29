@@ -41,20 +41,43 @@ ContentPart = Annotated[
 
 
 class Message(BaseModel):
-    """A single chat message with role and content."""
+    """A single chat message with role and content.
 
-    role: Literal["system", "user", "assistant"]
-    content: str | list[ContentPart]
+    Roles:
+      - system / user / assistant: standard OpenAI chat roles
+      - tool: tool result message sent back by the client after assistant called a tool
+              (multi-turn tool use); requires tool_call_id to link back to the call.
+
+    Optional fields for tool-calling multi-turn flow:
+      - tool_call_id: present on role=tool messages; links result to assistant's call.
+      - tool_calls:   present on role=assistant messages that invoked tools (history replay).
+      - name:         tool name on role=tool messages (optional; wrapper derives from context).
+    """
+
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str | list[ContentPart] | None = None
     name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None  # opaque; only forwarded for prompt-building
     model_config = ConfigDict(extra="allow")
 
     @model_validator(mode="after")
-    def reject_image_content(self) -> Message:
-        """Reject list content containing image_url parts (vision not supported v1)."""
+    def validate_message(self) -> Message:
+        """Validate message consistency for supported roles.
+
+        - Rejects image_url content parts (vision not v1).
+        - Requires tool_call_id when role=tool.
+        - Allows content=None for role=assistant with tool_calls (OpenAI spec).
+        - Requires non-None content for system/user messages.
+        """
         if isinstance(self.content, list):
             for part in self.content:
                 if isinstance(part, ImageContent):
                     raise ValueError("image_url content parts are not supported; text-only mode")
+        if self.role == "tool" and not self.tool_call_id:
+            raise ValueError("tool_call_id is required for role=tool messages")
+        if self.role in ("system", "user") and self.content is None:
+            raise ValueError(f"content is required for role={self.role}")
         return self
 
 
@@ -100,16 +123,17 @@ class ChatCompletionRequest(BaseModel):
 
     @model_validator(mode="after")
     def reject_unsupported(self) -> ChatCompletionRequest:
-        """Return 400 for any explicitly unsupported field."""
+        """Return 400 for fields that would corrupt output if silently ignored.
+
+        tools / tool_choice / functions: SILENTLY IGNORED (logged) — many OpenAI
+        clients (HA Extended OpenAI Conversation, langchain, etc.) always send
+        these fields even when no functions are intended. Strict-rejecting them
+        breaks every such client. Codex CLI does not expose function calling, so
+        the response will be plain text regardless.
+        """
         rejects: list[str] = []
         if self.n is not None and self.n != 1:
             rejects.append("n (must be 1)")
-        if self.tools:
-            rejects.append("tools")
-        if self.functions:
-            rejects.append("functions")
-        if self.tool_choice is not None:
-            rejects.append("tool_choice")
         if self.response_format is not None:
             rejects.append("response_format")
         if self.logprobs:

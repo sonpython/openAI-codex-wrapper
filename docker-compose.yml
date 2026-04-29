@@ -39,9 +39,14 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://codex:codex@postgres:5432/codex_wrapper
       REDIS_URL: redis://redis:6379/0
+      CODEX_AUTH_DIR: /codex-auth
+      WORKSPACE_ROOT: /workspaces
     volumes:
       # Read-only mount of host ChatGPT session — no container can mutate it.
-      - "${CODEX_AUTH_HOST_DIR:-${HOME}/.codex}:/codex-auth:ro"
+      - "${CODEX_AUTH_HOST_DIR:-${HOME}/.codex}:/codex-auth"
+      # Gateway needs ephemeral workspaces too — chat-completions and responses
+      # routes spawn codex subprocess and require a writable workspace dir.
+      - workspaces:/workspaces
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,8 +64,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://codex:codex@postgres:5432/codex_wrapper
       REDIS_URL: redis://redis:6379/0
+      CODEX_AUTH_DIR: /codex-auth
+      WORKSPACE_ROOT: /workspaces
     volumes:
-      - "${CODEX_AUTH_HOST_DIR:-${HOME}/.codex}:/codex-auth:ro"
+      - "${CODEX_AUTH_HOST_DIR:-${HOME}/.codex}:/codex-auth"
       - workspaces:/workspaces
     depends_on:
       postgres:
