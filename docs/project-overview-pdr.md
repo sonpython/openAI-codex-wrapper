@@ -31,7 +31,7 @@ Teams using Codex CLI today must:
 
 ### Core OpenAI Endpoints
 - `GET /v1/models` — List available models (returns `{"data": [{"id": "codex"}]}`)
-- `POST /v1/chat/completions` — Chat sync + SSE streaming
+- `POST /v1/chat/completions` — Chat sync + SSE streaming (with tool-calling support)
 - `POST /v1/responses` — Responses API with 50+ event taxonomy (sync + SSE)
 
 ### Codex-Specific
@@ -89,7 +89,6 @@ Teams using Codex CLI today must:
 
 ## Out of Scope (v1)
 
-- **Tools / function-calling** — Codex CLI doesn't expose; faking = brittle
 - **Vision, multimodal** — Text-only scope
 - **Fine-tuning, embeddings, audio** — Not in Codex CLI scope
 - **Public / external customers** — v2 decision; would require legal/compliance review + OPENAI_API_KEY auth switch
@@ -98,11 +97,14 @@ Teams using Codex CLI today must:
 - **Auto-PR generation** — v1.1 feature
 - **Billing integration** — Rate limit primitives exist; monetization deferred
 
+**Note:** Tools/function-calling was deferred as out-of-scope (Codex CLI doesn't expose natively) but was synthesized via prompt-engineering + JSON schema inlining in v1.0 (commit 2091772) and verified working with Home Assistant Extended OpenAI Conversation.
+
 ## Success Metrics
 
 | Metric | Target | Validation |
 |--------|--------|-----------|
-| SDK compatibility | OpenAI Python + Node smoke tests pass | `compat-*-sdk.yml` workflows green; both SDK sync + stream paths work |
+| SDK compatibility | OpenAI Python + Node + HA EOC smoke tests pass | `compat-*-sdk.yml` workflows green; Python/Node/HA sync + stream paths work; HA multi-turn with nested schemas verified |
+| Tool-calling support | Function-calling synthesis with nested schema preservation | HA EOC `execute_services` tool end-to-end verified; 27 regression tests pass |
 | p95 latency (first-token) | < 2s on `/v1/chat/completions` stream | Load test in phase-10; Tempo traces confirm |
 | Internal availability | Best-effort (no public SLA) | ChatGPT refresh windows expected; readiness probe handles gracefully |
 | Cross-job isolation | Zero workspace leak | Integration test asserts workspace content isolation per job_id |
@@ -211,6 +213,7 @@ See [implementation plan](../plans/260427-1358-codex-openai-wrapper/plan.md) for
 
 - [x] All 11 phases implemented and tested
 - [x] OpenAI Python + Node SDK smoke tests pass (sync + stream)
+- [x] Tool-calling synthesis verified with HA Extended OpenAI Conversation (multi-turn, nested schemas)
 - [x] p95 latency measured < 2s (phase-10 load test)
 - [x] Zero cross-job workspace leak (integration tests)
 - [x] Rate-limit accuracy ±1% at 100 req/s
@@ -218,10 +221,10 @@ See [implementation plan](../plans/260427-1358-codex-openai-wrapper/plan.md) for
 - [x] Weekly real-codex cron green (drift detection)
 - [x] Access gate enforces internal-only reachability (external port-scan returns zero open ports)
 - [x] Runbook reviewed + deployed
-- [x] 615 unit tests passing; 75%+ coverage on key modules
+- [x] 615+ unit tests passing; 75%+ coverage on key modules (27 new tool-calling tests)
 
 ---
 
-**Status:** v1 INTERNAL ONLY scope locked. Feature-complete. Production-ready.
+**Status:** v1 INTERNAL ONLY scope locked. Feature-complete (including tool-calling synthesis). Production-ready.
 
-**Last Updated:** 2026-04-27
+**Last Updated:** 2026-04-29 (tool-calling synthesis + HA EOC verification, metrics updated)

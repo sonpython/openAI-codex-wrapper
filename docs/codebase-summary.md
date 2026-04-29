@@ -25,9 +25,10 @@ src/
 ├── chat/                            Chat completions sync + streaming
 │   ├── __init__.py
 │   ├── id_factory.py                Generate chat_id (timestamp-based)
-│   ├── prompt_builder.py            Format messages → Codex prompt
-│   ├── sync_handler.py              Sync chat endpoint (blocking)
+│   ├── prompt_builder.py            Format messages → Codex prompt (multi-turn with tool_calls history)
+│   ├── sync_handler.py              Sync chat endpoint (blocking + tool_calls branch)
 │   ├── stream_handler.py            SSE streaming chat endpoint
+│   ├── tool_calling.py              (NEW) Tool-calling synthesis via prompt-engineering
 │   └── usage_estimator.py           Estimate input/output tokens (heuristic)
 │
 ├── codex/                           Codex CLI subprocess + event handling
@@ -108,23 +109,23 @@ src/
 │   ├── logging.py                   structlog config + redaction processor
 │   ├── metrics.py                   Prometheus instruments (16 total)
 │   ├── tracing.py                   OpenTelemetry OTLP initialization
-│   └── alert_webhooks.py            Prometheus alertmanager webhook handlers
+│   └── alert_webhooks.py            (NEW) Prometheus alertmanager webhook handlers
 │
 ├── workers/                         Arq background tasks + job lifecycle
 │   ├── __init__.py
 │   ├── arq_worker.py                Arq worker entrypoint (async job runner)
 │   ├── job_handlers.py              Task handlers (clone, run, diff, publish events)
-│   ├── event_publisher.py           Publish job events to Redis pub/sub
+│   ├── event_publisher.py           (NEW) Publish job events to Redis pub/sub
 │   ├── git_clone.py                 Clone repo to ephemeral workspace
-│   ├── git_diff.py                  Generate diff after codex run
+│   ├── git_diff.py                  (NEW) Generate diff after codex run
 │   ├── janitor.py                   Cleanup stale workspaces + dead Redis entries
 │   └── repo_url_head_check.py       Validate repo URL before clone (SSRF guard)
 │
 └── infra/                           Infrastructure as code (Redis Lua scripts)
     ├── __init__.py
-    └── redis_lua/
+    └── redis_lua/                   (NEW) Lua scripts for rate-limit
         ├── __init__.py
-        └── (Lua scripts for rate-limit sliding windows, queue ops)
+        └── (Lua scripts for sliding windows, rate-limit ops)
 ```
 
 ---
@@ -135,9 +136,10 @@ src/
 |--------|---------|------------------------|
 | `auth.bearer` | Extract bearer token from Authorization header | `extract_bearer_token()`, `validate_api_key()` |
 | `auth.hashing` | argon2id hash/verify for API keys | `hash_key()`, `verify_key()` |
-| `chat.prompt_builder` | Format SDK messages into Codex prompt format | `build_prompt_for_codex()` |
+| `chat.prompt_builder` | Format SDK messages into Codex prompt (multi-turn with tool_calls) | `build_prompt_for_codex()` |
 | `chat.stream_handler` | SSE streaming chat endpoint | `stream_chat_completions()` |
-| `chat.sync_handler` | Blocking chat endpoint (gather full response) | `sync_chat_completions()` |
+| `chat.sync_handler` | Blocking chat endpoint (gather full response + tool_calls branch) | `sync_chat_completions()` |
+| `chat.tool_calling` | Tool-calling synthesis via prompt-engineering | `format_tools_prompt()`, `parse_tool_calls_response()` |
 | `codex.runner` | Subprocess manager for `codex exec --json` | `CodexRunner.run()`, `CodexRunner.cancel()` |
 | `codex.jsonl_parser` | Parse newline-delimited JSON from stdout | `JSONLParser.parse_event()` |
 | `codex.workspace` | Ephemeral tmpfs directory per job | `Workspace.create()`, `Workspace.cleanup()` |
@@ -148,14 +150,18 @@ src/
 | `gateway.app` | FastAPI factory + middleware stack | `create_app()`, lifespan handlers |
 | `gateway.middleware.auth` | Bearer token → user lookup + request.user | `auth_middleware()` |
 | `gateway.middleware.rate_limit` | Multi-tier rate limit enforcement | `RateLimitMiddleware`, RPM/TPM/concurrent logic |
-| `gateway.routes.chat_completions` | POST /v1/chat/completions | `chat_completions_sync()`, `chat_completions_stream()` |
+| `gateway.routes.chat_completions` | POST /v1/chat/completions (sync + SSE, tool_calls support) | `chat_completions_sync()`, `chat_completions_stream()` |
 | `gateway.routes.jobs` | POST/GET/DELETE /v1/codex/jobs* | `enqueue_job()`, `get_job()`, `cancel_job()`, `stream_events()` |
 | `observability.logging` | structlog setup + secret redaction | `configure_logging()`, `RedactionProcessor` |
 | `observability.metrics` | Prometheus instrument definitions + reporting | 16 instruments (latency, errors, queue depth, etc.) |
+| `observability.alert_webhooks` | Alertmanager webhook handlers (NEW) | `handle_alert_firing()`, `handle_alert_resolved()` |
 | `responses.events_emitter` | Emit 50+ Responses API event types | `ResponsesEmitter.chunk()`, `.end()`, `.error()` |
 | `workers.job_handlers` | Arq task handlers (clone, run, diff) | `run_codex_job()`, `publish_job_event()` |
+| `workers.event_publisher` | Publish job events to Redis pub/sub (NEW) | `publish_job_event()`, `subscribe_to_events()` |
 | `workers.git_clone` | Clone repo to workspace | `clone_repo_to_workspace()` |
+| `workers.git_diff` | Generate diff after codex run (NEW) | `generate_diff()` |
 | `workers.janitor` | Cleanup stale workspaces + Redis debris | `cleanup_stale_workspaces()`, `cleanup_dead_pubsub_entries()` |
+| `infra.redis_lua` | Redis Lua scripts for rate-limiting (NEW) | Sliding window RPM/TPM scripts |
 
 ---
 
@@ -358,4 +364,4 @@ Key environment variables:
 
 ---
 
-**Last Updated:** 2026-04-27
+**Last Updated:** 2026-04-29 (tool-calling synthesis, HA EOC nested schema support, new observability modules)

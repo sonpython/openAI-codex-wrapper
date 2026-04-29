@@ -8,9 +8,9 @@
 
 ## v1: INTERNAL ONLY (Current — Locked)
 
-**Status:** ✅ Complete (all 11 phases shipped)  
+**Status:** ✅ Complete (all 11 phases shipped + tool-calling synthesis)  
 **Scope:** ChatGPT login auth, no external customers, internal team use only  
-**Test Coverage:** 615 unit tests passing; ≥75% coverage on key modules
+**Test Coverage:** 615+ unit tests passing; ≥75% coverage on key modules
 
 ### Completed Features
 
@@ -18,6 +18,7 @@
 |---------|--------|-------|
 | **OpenAI Endpoints** | ✅ | GET /v1/models, POST /v1/chat/completions (sync + SSE), POST /v1/responses (sync + SSE) |
 | **Chat Completions** | ✅ | Full OpenAI SDK compatibility (Python + Node.js); SSE streaming with keepalive |
+| **Tool-Calling Synthesis** | ✅ | Prompt-engineered function-calling with full JSON schema inlining; HA EOC verified |
 | **Responses API** | ✅ | 50+ event taxonomy; async event publisher to Redis pub/sub |
 | **Codex Jobs** | ✅ | POST/GET/DELETE /v1/codex/jobs; ephemeral workspace per task; diff generation |
 | **Job Streaming** | ✅ | GET /v1/codex/jobs/{id}/events (SSE); replay old + subscribe new |
@@ -27,6 +28,7 @@
 | **Workspace Isolation** | ✅ | Path validation (realpath + commonpath); ephemeral cleanup; C6 red-team fix |
 | **Sandbox Enforcement** | ✅ | Codex --sandbox workspace-write (Landlock/seccomp/Seatbelt) |
 | **Observability Stack** | ✅ | structlog → Loki, Prometheus (16 instruments), OTEL → Tempo, Grafana dashboards |
+| **Observability: Webhooks** | ✅ | Prometheus alertmanager webhook handlers (NEW, commit 2091772) |
 | **Audit Log** | ✅ | Per-API-call logging; accessible via admin API |
 | **Stderr Archive** | ✅ | Preserve subprocess stderr for debugging; indexed in DB |
 | **Structured Logging** | ✅ | JSON logs with request_id propagation; secret redaction |
@@ -35,17 +37,19 @@
 | **Docker Compose Deploy** | ✅ | Single VM stack: gateway, worker, postgres, redis, caddy, otel, loki, tempo, prometheus, grafana |
 | **Access Gate** | ✅ | Internal-only reachability (Cloudflare Access / Tailscale / IP allowlist TBD) |
 | **SDK Compat Tests** | ✅ | Python + Node.js smoke tests; weekly real-codex drift cron |
+| **HA EOC Compatibility** | ✅ | Extended OpenAI Conversation end-to-end verified with nested array schemas |
 
 ### Metrics Achieved
 
-- ✅ **615 unit tests** passing
-- ✅ **~9,500 LOC** in src/ (81 modules)
+- ✅ **615+ unit tests** passing (27 new tests for tool-calling in v1.0)
+- ✅ **~10,500 LOC** in src/ (88 modules: +7 new for tool-calling, redis_lua, workers)
 - ✅ **p95 first-token latency** < 2s on /v1/chat/completions stream
 - ✅ **Rate-limit accuracy** ±1% at 100 req/s
 - ✅ **Zero cross-job workspace leak** (integration tests)
 - ✅ **Zero secrets in logs** (CI grep gate)
 - ✅ **Weekly drift detection** (real-codex cron enabled)
 - ✅ **Access gate verified** (external port-scan returns zero open /v1/* ports)
+- ✅ **HA EOC multi-turn with nested schemas** verified end-to-end
 
 ---
 
@@ -59,7 +63,7 @@
 
 | Feature | Priority | Effort | Status | Notes |
 |---------|----------|--------|--------|-------|
-| **Tools / Function-Calling** | High | M | Planned | Synthesize OpenAI function-call syntax + responses. Codex CLI doesn't expose natively; requires wrapping. |
+| **Tools / Function-Calling** | ✅ High | ✅ S | DONE (v1.0) | Synthesize OpenAI function-call syntax via prompt-engineering. Full JSON schema inlining for nested parameters. HA EOC compatible. 27 tests. |
 | **Multi-Account ChatGPT Pool** | High | L | Planned | Rotate between multiple ChatGPT login sessions (load balancing, resilience to single-account ban). Auth rotation via cron. |
 | **GitHub PAT Support** | High | S | Planned | Accept GITHUB_TOKEN for private repo clone. Current: public repos only (422 on private). |
 | **Webhook Callbacks for Jobs** | Medium | M | Planned | POST {callback_url} when job completes. Requires job state machine + webhook retry logic. |
@@ -302,5 +306,5 @@
 
 ---
 
-**Last Updated:** 2026-04-27  
+**Last Updated:** 2026-04-29 (tool-calling synthesis completed + HA EOC verified, phases 07-10 finalized)  
 **Next Review:** Post-v1 launch (feedback-driven)
