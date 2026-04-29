@@ -7,6 +7,8 @@ Per researcher-02 §A.2-A.5.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -21,8 +23,36 @@ class Usage(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class ToolCallFunction(BaseModel):
+    """Function name + JSON-encoded arguments for a tool call (per OpenAI spec)."""
+
+    name: str
+    arguments: str  # JSON string, not dict — per OpenAI spec
+
+
+class ToolCall(BaseModel):
+    """A single tool call emitted by the assistant."""
+
+    id: str
+    type: Literal["function"] = "function"
+    function: ToolCallFunction
+
+
+class ChatCompletionMessage(BaseModel):
+    """Assistant message that may carry tool calls (finish_reason='tool_calls')
+    or plain content (finish_reason='stop').
+
+    content is None when tool_calls is present (OpenAI spec).
+    """
+
+    role: Literal["assistant"] = "assistant"
+    content: str | None = None
+    tool_calls: list[ToolCall] | None = None
+    model_config = ConfigDict(extra="allow")
+
+
 class ResponseMessage(BaseModel):
-    """Fully-materialized message in a sync response."""
+    """Fully-materialized message in a sync response (no tool_calls — text-only path)."""
 
     role: str
     content: str
@@ -30,10 +60,15 @@ class ResponseMessage(BaseModel):
 
 
 class Choice(BaseModel):
-    """Single choice in a sync chat completion response."""
+    """Single choice in a sync chat completion response.
+
+    ``message`` may be a ChatCompletionMessage (tool_calls path) or
+    ResponseMessage (plain text path) — both serialize correctly because
+    Pydantic uses the actual object's fields.
+    """
 
     index: int
-    message: ResponseMessage
+    message: ChatCompletionMessage | ResponseMessage
     finish_reason: str
     logprobs: None = None
     model_config = ConfigDict(extra="allow")

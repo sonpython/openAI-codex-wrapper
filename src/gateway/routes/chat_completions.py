@@ -26,6 +26,7 @@ from starlette.background import BackgroundTask
 from src.chat.prompt_builder import build_prompt
 from src.chat.stream_handler import stream_chunks
 from src.chat.sync_handler import handle_sync
+from src.chat.tool_calling import format_tools_prompt
 from src.chat.usage_estimator import _count_tokens
 from src.codex.runner import run_codex
 from src.codex.workspace import cleanup_workspace, make_workspace
@@ -77,8 +78,12 @@ async def chat_completions(
     settings = get_settings()
 
     # Build prompt — may raise ValueError (too long) → caught below → 400.
+    # When tools are present, format_tools_prompt generates a system-level
+    # instruction block that is prepended to the prompt so Codex knows to
+    # emit structured JSON for tool calls.
     try:
-        prompt = build_prompt(req.messages)
+        tools_prompt = format_tools_prompt(req.tools, req.tool_choice) if req.tools else None
+        prompt = build_prompt(req.messages, tools_prompt=tools_prompt)
     except ValueError as exc:
         return _openai_error(400, str(exc), code="context_length_exceeded")
 
