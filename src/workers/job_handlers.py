@@ -26,11 +26,12 @@ from typing import Any
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.codex.events import ErrorEvent
+from src.codex.events import ErrorEvent, TurnCompleted, TurnFailed
 from src.codex.runner import run_codex
 from src.codex.stderr_archive import archive_stderr
 from src.codex.workspace import cleanup_workspace, make_workspace
 from src.db.crud import jobs as jobs_crud
+from src.db.crud.usage_daily import upsert as usage_daily_upsert
 from src.db.engine import bg_session
 from src.observability.metrics import ARQ_JOB_DURATION, ARQ_JOBS_TOTAL
 from src.settings import get_settings
@@ -89,6 +90,8 @@ async def run_codex_job(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
         task = job.task
         mode = job.mode
         timeout = settings.job_timeout_seconds
+        job_user_id: uuid.UUID = job.user_id
+        job_api_key_id: uuid.UUID | None = job.api_key_id
 
     try:
         # ── Mark running ──────────────────────────────────────────────────
@@ -129,6 +132,8 @@ async def run_codex_job(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
         stderr_buf: list[str] = []
         exit_code: int | None = 0
         allow_write = mode == "workspace-write"
+        total_input_tokens: int = 0
+        total_output_tokens: int = 0
 
         async with asyncio.timeout(timeout):
             async for evt in run_codex(
@@ -153,6 +158,11 @@ async def run_codex_job(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
                     and hasattr(evt.item, "text")
                 ):
                     summary_parts.append(str(evt.item.text))
+
+                # Accumulate token usage from TurnCompleted / TurnFailed events.
+                if isinstance(evt, (TurnCompleted, TurnFailed)) and evt.usage is not None:
+                    total_input_tokens += evt.usage.input_tokens
+                    total_output_tokens += evt.usage.output_tokens
 
                 # Capture exit code from error events
                 if isinstance(evt, ErrorEvent):
@@ -187,7 +197,33 @@ async def run_codex_job(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
                 exit_code=exit_code,
                 stderr_tail=stderr_tail,
             )
+            # Record token counts; best-effort (stays 0 if codex doesn't emit usage).
+            await jobs_crud.update_token_counts(
+                session,
+                uuid.UUID(job_id),
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+            )
             await session.commit()
+
+        # Upsert daily usage for async job; api_key_id may be None for legacy rows.
+        if job_api_key_id is not None:
+            import datetime as _dt  # noqa: PLC0415
+
+            today = _dt.datetime.now(_dt.UTC).date()
+            try:
+                async with bg_session() as session:
+                    await usage_daily_upsert(
+                        session,
+                        user_id=job_user_id,
+                        api_key_id=job_api_key_id,
+                        period=today,
+                        requests=1,
+                        input_tokens=total_input_tokens,
+                        output_tokens=total_output_tokens,
+                    )
+            except Exception:  # noqa: BLE001
+                log.warning("job.usage_daily_upsert_failed", exc_info=True)
 
         await publish_job_event(redis, job_id, "job.completed", {"summary": summary or ""})
         log.info("job.completed", files_changed=len(diff_result.files_changed))

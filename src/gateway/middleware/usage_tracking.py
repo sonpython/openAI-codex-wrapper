@@ -41,6 +41,7 @@ from redis.exceptions import RedisError
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from src.db.crud.usage_counter import increment as usage_increment
+from src.db.crud.usage_daily import upsert as usage_daily_upsert
 from src.db.engine import bg_session
 from src.gateway.middleware.rate_limit import _month_start_utc
 from src.redis_client import get_client
@@ -191,6 +192,29 @@ class UsageTrackingMiddleware:
                         )
                 except Exception:  # noqa: BLE001
                     logger.warning("usage_tracking.postgres_upsert_failed", exc_info=True)
+
+            # Daily usage_daily upsert — separate session, best-effort.
+            if usage and actual_total > 0 and key_str:
+                input_tokens = int(usage.get("input_tokens", usage.get("prompt_tokens", 0)))
+                output_tokens = int(usage.get("output_tokens", usage.get("completion_tokens", 0)))
+                try:
+                    import datetime  # noqa: PLC0415
+
+                    today = datetime.datetime.now(datetime.UTC).date()
+                    from uuid import UUID  # noqa: PLC0415
+
+                    async with bg_session() as session:
+                        await usage_daily_upsert(
+                            session,
+                            user_id=UUID(user_str),
+                            api_key_id=UUID(key_str),
+                            period=today,
+                            requests=1,
+                            input_tokens=input_tokens,
+                            output_tokens=output_tokens,
+                        )
+                except Exception:  # noqa: BLE001
+                    logger.warning("usage_tracking.daily_upsert_failed", exc_info=True)
 
         except Exception:  # noqa: BLE001
             logger.warning("usage_tracking.true_up_unexpected_error", exc_info=True)

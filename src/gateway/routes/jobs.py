@@ -62,6 +62,7 @@ async def create_job(
 ) -> JobCreatedResponse:
     """Enqueue a new codex job. Returns 202 with job id immediately."""
     user_id = _require_user_id(request)
+    api_key_id: uuid.UUID | None = getattr(request.state, "api_key_id", None)
     settings = get_settings()
     redis = get_client()
     if redis is None:
@@ -89,6 +90,7 @@ async def create_job(
         job = await jobs_crud.create_job(
             session,
             user_id=user_id,
+            api_key_id=api_key_id,
             repo_url=body.repo_url,
             branch=body.branch,
             task=body.task,

@@ -322,3 +322,98 @@ async def test_list_orphans_empty_when_none_running(
 ) -> None:
     orphans = await jobs_crud.list_orphans(session)
     assert orphans == []
+
+
+# ── create_job with api_key_id ────────────────────────────────────────────────
+
+
+async def test_create_job_stores_api_key_id(session: AsyncSession, user_id: uuid.UUID) -> None:
+    key_id = uuid.uuid4()
+    job = await jobs_crud.create_job(
+        session,
+        user_id=user_id,
+        repo_url="https://github.com/openai/codex",
+        branch="main",
+        task="Fix the bug",
+        mode="read-only",
+        api_key_id=key_id,
+    )
+    await session.commit()
+    assert job.api_key_id == key_id
+
+
+async def test_create_job_api_key_id_defaults_to_none(
+    session: AsyncSession, user_id: uuid.UUID
+) -> None:
+    job = await jobs_crud.create_job(
+        session,
+        user_id=user_id,
+        repo_url="https://github.com/openai/codex",
+        branch="main",
+        task="Fix the bug",
+        mode="read-only",
+    )
+    await session.commit()
+    assert job.api_key_id is None
+
+
+# ── update_token_counts ───────────────────────────────────────────────────────
+
+
+async def test_update_token_counts_sets_values(
+    session: AsyncSession, user_id: uuid.UUID
+) -> None:
+    job = await jobs_crud.create_job(
+        session,
+        user_id=user_id,
+        repo_url="https://github.com/openai/codex",
+        branch="main",
+        task="t",
+        mode="read-only",
+    )
+    await session.commit()
+
+    await jobs_crud.update_token_counts(session, job.id, input_tokens=150, output_tokens=75)
+    await session.commit()
+
+    await session.refresh(job)
+    assert job.input_tokens == 150
+    assert job.output_tokens == 75
+
+
+async def test_update_token_counts_zero_values(
+    session: AsyncSession, user_id: uuid.UUID
+) -> None:
+    """Setting 0/0 is valid (codex didn't emit token_usage)."""
+    job = await jobs_crud.create_job(
+        session,
+        user_id=user_id,
+        repo_url="https://github.com/openai/codex",
+        branch="main",
+        task="t",
+        mode="read-only",
+    )
+    await session.commit()
+
+    await jobs_crud.update_token_counts(session, job.id, input_tokens=0, output_tokens=0)
+    await session.commit()
+
+    await session.refresh(job)
+    assert job.input_tokens == 0
+    assert job.output_tokens == 0
+
+
+async def test_new_job_has_zero_tokens_by_default(
+    session: AsyncSession, user_id: uuid.UUID
+) -> None:
+    job = await jobs_crud.create_job(
+        session,
+        user_id=user_id,
+        repo_url="https://github.com/openai/codex",
+        branch="main",
+        task="t",
+        mode="read-only",
+    )
+    await session.commit()
+    assert job.input_tokens == 0
+    assert job.output_tokens == 0

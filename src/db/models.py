@@ -110,6 +110,13 @@ class Job(Base):
         nullable=False,
         index=True,
     )
+    # api_key_id links job to the key used at submission time.
+    # SET NULL on delete: revoking a key preserves job history.
+    api_key_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("api_keys.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     # Status values: queued | running | succeeded | failed | cancelled
     status: Mapped[str] = mapped_column(String(20), index=True, nullable=False)
     repo_url: Mapped[str] = mapped_column(Text, nullable=False)
@@ -130,6 +137,10 @@ class Job(Base):
     enqueued_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # Per-job token counts recorded at completion time by the worker.
+    # Summed in admin usage queries for daily token breakdowns.
+    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
 
     def __repr__(self) -> str:
         return f"Job(id={self.id!s}, status={self.status!r}, user_id={self.user_id!s})"
@@ -193,3 +204,7 @@ class UsageCounter(Base):
 # Phase 08: AuditLog is defined in a separate module to keep this file <200 LOC.
 # Import here so Alembic discovers it via Base.metadata when it imports src.db.models.
 from src.db.models_audit_log import AuditLog  # noqa: E402, F401
+
+# Phase 09: UsageDaily is defined in a separate module to keep this file <200 LOC.
+# Import here so Alembic discovers it via Base.metadata when it imports src.db.models.
+from src.db.models_usage_daily import UsageDaily  # noqa: E402, F401
