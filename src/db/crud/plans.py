@@ -94,3 +94,64 @@ async def get_limits(session: AsyncSession, tier: str) -> dict[str, int]:
 def invalidate_cache() -> None:
     """Clear the in-process tier cache.  Useful in tests and after plan updates."""
     _CACHE.clear()
+
+
+async def update(
+    session: AsyncSession,
+    tier: str,
+    rpm: int,
+    tpm: int,
+    concurrent: int,
+    monthly_quota: int,
+) -> Plan:
+    """Upsert rate-limit values for a given tier.
+
+    Uses INSERT … ON CONFLICT (tier) DO UPDATE so this is safe whether or not
+    the tier row already exists.  Values are validated (>= 0) by the caller
+    (Pydantic schema) before this function is invoked.
+
+    Args:
+        session:       SQLAlchemy async session.
+        tier:          Tier string — "free" | "pro" | "ent" | "enterprise".
+        rpm:           Requests per minute (>= 0).
+        tpm:           Tokens per minute (>= 0).
+        concurrent:    Max concurrent requests (>= 0).
+        monthly_quota: Monthly token quota (>= 0); maps to monthly_tokens column.
+
+    Returns:
+        The updated Plan ORM row (re-fetched after upsert).
+    """
+    from sqlalchemy.dialects.postgresql import insert as pg_insert  # noqa: PLC0415
+
+    stmt = (
+        pg_insert(Plan)
+        .values(
+            tier=tier,
+            rpm=rpm,
+            tpm=tpm,
+            concurrent=concurrent,
+            monthly_tokens=monthly_quota,
+        )
+        .on_conflict_do_update(
+            index_elements=["tier"],
+            set_=dict(
+                rpm=rpm,
+                tpm=tpm,
+                concurrent=concurrent,
+                monthly_tokens=monthly_quota,
+            ),
+        )
+    )
+    await session.execute(stmt)
+    await session.flush()
+
+    # Re-fetch to get the authoritative DB state (including server_defaults).
+    result = await session.execute(select(Plan).where(Plan.tier == tier))
+    updated = result.scalar_one()
+    return updated
+
+
+async def list_all(session: AsyncSession) -> list[Plan]:
+    """Return all Plan rows ordered by tier name."""
+    result = await session.execute(select(Plan).order_by(Plan.tier))
+    return list(result.scalars().all())
