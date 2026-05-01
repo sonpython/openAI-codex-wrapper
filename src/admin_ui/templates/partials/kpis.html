@@ -1,0 +1,42 @@
+<div
+  id="kpi-grid"
+  class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
+  hx-get="/admin/ui/partials/kpis"
+  hx-target="#kpi-grid"
+  hx-swap="outerHTML"
+  hx-trigger="every 5s"
+>
+  <!-- Req Rate -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Req Rate (1m)</p>
+    <p class="mt-2 text-2xl font-bold text-gray-800">
+      {{ "%.2f"|format(kpis.req_rate_1m) }}
+      <span class="text-sm font-normal text-gray-400">/s</span>
+    </p>
+  </div>
+
+  <!-- Error Rate -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Error Rate (5m)</p>
+    <p class="mt-2 text-2xl font-bold {% if kpis.error_rate_5m > 0.05 %}text-red-600{% else %}text-gray-800{% endif %}">
+      {{ "%.1f"|format(kpis.error_rate_5m * 100) }}
+      <span class="text-sm font-normal text-gray-400">%</span>
+    </p>
+  </div>
+
+  <!-- Active Jobs -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Active Jobs</p>
+    <p class="mt-2 text-2xl font-bold text-gray-800">
+      {{ kpis.active_jobs | int }}
+    </p>
+  </div>
+
+  <!-- Queue Depth -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Queue Depth</p>
+    <p class="mt-2 text-2xl font-bold {% if kpis.queue_depth > 10 %}text-amber-600{% else %}text-gray-800{% endif %}">
+      {{ kpis.queue_depth | int }}
+    </p>
+  </div>
+</div>

@@ -138,6 +138,13 @@ class Settings(BaseSettings):
     # Redis TTL (seconds) to cache a positive HEAD result.
     repo_head_cache_seconds: int = 300
 
+    # ── Admin UI ───────────────────────────────────────────────────────────────
+    # Optional external Prometheus URL for admin dashboard live metrics.
+    # When unset, dashboard falls back to parsing /_internal/metrics locally.
+    prometheus_url: str | None = None
+    # Cookie session TTL for admin UI (seconds). Default 8h.
+    admin_session_ttl_seconds: int = 28800
+
     # ── Observability ──────────────────────────────────────────────────────
     log_level: str = "INFO"
     otel_exporter_otlp_endpoint: str | None = None  # None → no-op tracer

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Admin{% endblock %} — codex-wrapper</title>
+
+  <!-- Tailwind CSS (browser CDN build) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- HTMX 2.x -->
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"
+          integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+          crossorigin="anonymous"></script>
+
+  <!-- Chart.js 4.x -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+  <!-- App JS -->
+  <script src="/admin/ui/static/app.js" defer></script>
+
+  {% block head %}{% endblock %}
+</head>
+<body class="h-full">
+
+  <!-- Navbar -->
+  <nav class="bg-gray-900 text-white shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-14">
+        <div class="flex items-center gap-6">
+          <a href="/admin/ui/" class="font-semibold text-sm tracking-wide text-gray-100 hover:text-white">
+            codex-wrapper admin
+          </a>
+          <div class="hidden md:flex gap-4 text-sm">
+            <a href="/admin/ui/" class="text-gray-300 hover:text-white px-2 py-1 rounded">Dashboard</a>
+            <a href="/admin/ui/keys" class="text-gray-300 hover:text-white px-2 py-1 rounded">API Keys</a>
+            <a href="/admin/ui/tiers" class="text-gray-300 hover:text-white px-2 py-1 rounded">Tiers</a>
+            <a href="/admin/ui/users" class="text-gray-300 hover:text-white px-2 py-1 rounded">Users</a>
+            <a href="/admin/ui/jobs" class="text-gray-300 hover:text-white px-2 py-1 rounded">Jobs</a>
+            <a href="/admin/ui/audit" class="text-gray-300 hover:text-white px-2 py-1 rounded">Audit</a>
+          </div>
+        </div>
+        <a href="/admin/ui/logout"
+           class="text-xs text-gray-400 hover:text-red-400 transition-colors">
+          Logout
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Page content -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+</body>
+</html>

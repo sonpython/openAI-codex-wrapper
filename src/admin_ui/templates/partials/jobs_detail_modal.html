@@ -1,0 +1,132 @@
+{# Partial: job detail modal content.
+   Loaded via HTMX into #detail-modal-content.
+   Context: job (ORM Job row), duration_ms (int|None), stderr_url (str)
+#}
+<div class="p-6">
+  <div class="mb-5 flex items-center justify-between">
+    <h3 class="text-base font-semibold text-gray-800">Job Detail</h3>
+    <button onclick="closeDetailModal()" class="text-gray-400 hover:text-gray-600">
+      <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Metadata grid -->
+  <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm mb-6">
+    <div>
+      <dt class="text-xs font-medium text-gray-500 uppercase tracking-wide">Job ID</dt>
+      <dd class="mt-1 font-mono text-xs text-gray-700 break-all">{{ job.id }}</dd>
+    </div>
+    <div>
+      <dt class="text-xs font-medium text-gray-500 uppercase tracking-wide">Status</dt>
+      <dd class="mt-1">
+        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+          {% if job.status == 'succeeded' %}bg-green-100 text-green-700
+          {% elif job.status == 'failed' %}bg-red-100 text-red-700
+          {% elif job.status == 'running' %}bg-blue-100 text-blue-700
+          {% elif job.status == 'cancelled' %}bg-gray-100 text-gray-500
+          {% else %}bg-amber-100 text-amber-700{% endif %}">
+          {{ job.status }}
+        </span>
+      </dd>
+    </div>
+    <div>
+      <dt class="text-xs font-medium text-gray-500 uppercase tracking-wide">Mode</dt>
+      <dd class="mt-1 text-gray-700">{{ job.mode or '—' }}</dd>
+    </div>
+    <div>
+      <dt class="text-xs font-medium text-gray-500 uppercase tracking-wide">Exit Code</dt>
+      <dd class="mt-1 font-mono text-gray-700">
+        {% if job.exit_code is not none %}{{ job.exit_code }}{% else %}—{% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-xs font-medium text-gray-500 uppercase tracking-wide">Enqueued</dt>
+      <dd class="mt-1 text-gray-600 text-xs">
+        {% if job.enqueued_at %}{{ job.enqueued_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}{% else %}—{% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-xs font-medium text-gray-500 uppercase tracking-wide">Duration</dt>
+      <dd class="mt-1 text-gray-600">
+        {% if duration_ms is not none %}{{ duration_ms }}ms{% else %}—{% endif %}
+      </dd>
+    </div>
+    <div class="col-span-2">
+      <dt class="text-xs font-medium text-gray-500 uppercase tracking-wide">Repo URL</dt>
+      <dd class="mt-1 font-mono text-xs text-gray-700 break-all">{{ job.repo_url or '—' }}</dd>
+    </div>
+    <div>
+      <dt class="text-xs font-medium text-gray-500 uppercase tracking-wide">Branch</dt>
+      <dd class="mt-1 font-mono text-xs text-gray-700">{{ job.branch or '—' }}</dd>
+    </div>
+    {% if job.error_code %}
+    <div>
+      <dt class="text-xs font-medium text-gray-500 uppercase tracking-wide">Error Code</dt>
+      <dd class="mt-1 text-red-600 text-xs font-mono">{{ job.error_code }}</dd>
+    </div>
+    {% endif %}
+    {% if job.error_message %}
+    <div class="col-span-2">
+      <dt class="text-xs font-medium text-gray-500 uppercase tracking-wide">Error Message</dt>
+      <dd class="mt-1 text-red-600 text-xs">{{ job.error_message }}</dd>
+    </div>
+    {% endif %}
+  </dl>
+
+  <!-- Stderr tail from DB (stored on job completion) -->
+  {% if job.stderr_tail %}
+  <div class="mb-4">
+    <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Stderr Tail (DB)</h4>
+    <pre class="rounded-lg bg-gray-900 text-gray-100 text-xs p-4 overflow-x-auto max-h-48 overflow-y-auto font-mono whitespace-pre-wrap break-all">{{ job.stderr_tail }}</pre>
+  </div>
+  {% endif %}
+
+  <!-- Stderr archive (from S3/archive endpoint) — fetched client-side -->
+  <div>
+    <div class="flex items-center justify-between mb-2">
+      <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wide">Stderr Archive</h4>
+      <button id="stderr-load-btn"
+              onclick="loadStderrArchive('/admin/ui/jobs/{{ job.id }}/stderr_proxy')"
+              class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+        Load archive
+      </button>
+    </div>
+    <pre id="stderr-archive-content"
+         class="rounded-lg bg-gray-900 text-gray-400 text-xs p-4 overflow-x-auto max-h-64 overflow-y-auto font-mono whitespace-pre-wrap break-all min-h-[3rem]">
+Click "Load archive" to fetch stderr from the archive store.</pre>
+  </div>
+</div>
+
+<script>
+async function loadStderrArchive(url) {
+  const el = document.getElementById('stderr-archive-content');
+  const btn = document.getElementById('stderr-load-btn');
+  btn.disabled = true;
+  btn.textContent = 'Loading…';
+  el.textContent = 'Fetching…';
+  try {
+    // Proxy URL uses session-cookie auth — no X-Admin-Token needed from client.
+    const resp = await fetch(url, {credentials: 'same-origin'});
+    if (resp.status === 404) {
+      el.textContent = 'No archive available for this job.';
+    } else if (!resp.ok) {
+      el.textContent = 'Error ' + resp.status + ': ' + await resp.text();
+    } else {
+      const text = await resp.text();
+      // Truncate display to 1MB to avoid freezing the browser
+      const MAX = 1024 * 1024;
+      el.textContent = text.length > MAX
+        ? text.slice(0, MAX) + '\n\n[Truncated — ' + text.length + ' bytes total]'
+        : text;
+      el.classList.remove('text-gray-400');
+      el.classList.add('text-gray-100');
+    }
+  } catch (e) {
+    el.textContent = 'Network error: ' + e.message;
+  }
+  btn.disabled = false;
+  btn.textContent = 'Reload';
+}
+</script>

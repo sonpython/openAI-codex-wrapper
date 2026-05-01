@@ -1,0 +1,22 @@
+/*
+ * Admin UI — minimal overrides on top of Tailwind CDN.
+ * Keep this file lean; prefer Tailwind utility classes in templates.
+ */
+
+/* HTMX loading indicator — hide by default, show during request */
+.htmx-indicator {
+  display: none;
+}
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  display: inline-block;
+}
+
+/* Subtle card hover lift */
+.kpi-card {
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.kpi-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}

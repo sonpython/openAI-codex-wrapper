@@ -1,0 +1,36 @@
+{# Partial: single job table row.
+   Context variable: job — dict with id, user_email, status, model, created_at,
+                            completed_at, duration_ms, exit_code
+#}
+<tr class="hover:bg-gray-50">
+  <td class="px-4 py-3 font-mono text-xs text-gray-500" title="{{ job.id }}">
+    {{ job.id[:8] }}…
+  </td>
+  <td class="px-4 py-3 text-xs text-gray-600">{{ job.user_email }}</td>
+  <td class="px-4 py-3">
+    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+      {% if job.status == 'succeeded' %}bg-green-100 text-green-700
+      {% elif job.status == 'failed' %}bg-red-100 text-red-700
+      {% elif job.status == 'running' %}bg-blue-100 text-blue-700
+      {% elif job.status == 'cancelled' %}bg-gray-100 text-gray-500
+      {% else %}bg-amber-100 text-amber-700{% endif %}">
+      {{ job.status }}
+    </span>
+  </td>
+  <td class="px-4 py-3 text-xs text-gray-600">{{ job.model or '—' }}</td>
+  <td class="px-4 py-3 text-xs text-gray-500">
+    {% if job.created_at %}{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}{% else %}—{% endif %}
+  </td>
+  <td class="px-4 py-3 text-xs text-gray-500">
+    {% if job.duration_ms is not none %}{{ job.duration_ms }}ms{% else %}—{% endif %}
+  </td>
+  <td class="px-4 py-3 text-xs text-gray-500">
+    {% if job.exit_code is not none %}{{ job.exit_code }}{% else %}—{% endif %}
+  </td>
+  <td class="px-4 py-3 text-right">
+    <button onclick="openDetailModal('{{ job.id }}')"
+            class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+      Detail
+    </button>
+  </td>
+</tr>

@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}User — {{ user.email }}{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/admin/ui/users" class="text-sm text-indigo-600 hover:text-indigo-800">← Back to Users</a>
+</div>
+
+<!-- User header -->
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+  <h2 class="text-lg font-semibold text-gray-800 mb-1">{{ user.email }}</h2>
+  <p class="text-xs text-gray-400 font-mono">{{ user.id }}</p>
+  <p class="text-xs text-gray-500 mt-1">
+    Created: {% if user.created_at %}{{ user.created_at.strftime('%Y-%m-%d %H:%M UTC') }}{% else %}—{% endif %}
+  </p>
+</div>
+
+<!-- API Keys -->
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+  <div class="px-5 py-4 border-b border-gray-100">
+    <h3 class="text-sm font-semibold text-gray-700">API Keys ({{ keys | length }})</h3>
+  </div>
+  {% if keys %}
+  <table class="min-w-full divide-y divide-gray-100 text-sm">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Prefix</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tier</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Last Used</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for k in keys %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-2 text-gray-700">{{ k.name }}</td>
+        <td class="px-4 py-2 font-mono text-xs text-gray-600">{{ k.prefix }}…</td>
+        <td class="px-4 py-2">
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+            {% if k.tier == 'pro' %}bg-indigo-100 text-indigo-700
+            {% elif k.tier == 'ent' %}bg-purple-100 text-purple-700
+            {% else %}bg-gray-100 text-gray-600{% endif %}">
+            {{ k.tier }}
+          </span>
+        </td>
+        <td class="px-4 py-2">
+          {% if k.revoked_at %}
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700">revoked</span>
+          {% else %}
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700">active</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-2 text-xs text-gray-500">
+          {% if k.last_used_at %}{{ k.last_used_at.strftime('%Y-%m-%d') }}{% else %}Never{% endif %}
+        </td>
+        <td class="px-4 py-2 text-xs text-gray-500">
+          {% if k.created_at %}{{ k.created_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="px-5 py-6 text-sm text-gray-400">No API keys for this user.</p>
+  {% endif %}
+</div>
+
+<!-- 30-day Activity Chart -->
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+  <div class="flex items-center justify-between mb-4">
+    <h3 class="text-sm font-semibold text-gray-700">Activity (30 days)</h3>
+    <div class="flex gap-2 text-xs">
+      <button onclick="loadChart('30d')" id="btn-30d"
+              class="px-2 py-1 rounded border border-indigo-300 bg-indigo-50 text-indigo-700 font-medium">30d</button>
+      <button onclick="loadChart('7d')" id="btn-7d"
+              class="px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">7d</button>
+      <button onclick="loadChart('24h')" id="btn-24h"
+              class="px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">24h</button>
+    </div>
+  </div>
+  <canvas id="activity-chart" height="120"></canvas>
+  <p id="chart-empty" class="text-center text-sm text-gray-400 mt-4 hidden">No job activity in this period.</p>
+</div>
+{% endblock %}
+
+{% block head %}
+<script>
+const CHART_DATA_URL = "{{ chart_data_url }}";
+let _chart = null;
+
+async function loadChart(range) {
+  // Update button styles
+  ["30d", "7d", "24h"].forEach(r => {
+    const btn = document.getElementById("btn-" + r);
+    if (r === range) {
+      btn.className = "px-2 py-1 rounded border border-indigo-300 bg-indigo-50 text-indigo-700 font-medium";
+    } else {
+      btn.className = "px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50";
+    }
+  });
+
+  try {
+    const resp = await fetch(CHART_DATA_URL + "?range=" + range);
+    if (!resp.ok) return;
+    const data = await resp.json();
+
+    const emptyEl = document.getElementById("chart-empty");
+    const canvasEl = document.getElementById("activity-chart");
+
+    if (!data.labels || data.labels.length === 0) {
+      emptyEl.classList.remove("hidden");
+      canvasEl.classList.add("hidden");
+      return;
+    }
+    emptyEl.classList.add("hidden");
+    canvasEl.classList.remove("hidden");
+
+    if (_chart) {
+      _chart.destroy();
+      _chart = null;
+    }
+
+    _chart = new Chart(canvasEl, {
+      type: "line",
+      data: {
+        labels: data.labels,
+        datasets: [
+          {
+            label: "Requests",
+            data: data.requests,
+            borderColor: "#6366f1",
+            backgroundColor: "#6366f122",
+            borderWidth: 2,
+            pointRadius: 3,
+            tension: 0.3,
+            fill: true,
+            yAxisID: "y",
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { title: (items) => items[0].label } },
+        },
+        scales: {
+          x: {
+            ticks: { maxTicksLimit: 10, font: { size: 10 } },
+            grid: { display: false },
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: "#f3f4f6" },
+            ticks: { font: { size: 10 }, precision: 0 },
+            title: { display: true, text: "Requests", font: { size: 10 } },
+          },
+        },
+      },
+    });
+  } catch (e) {
+    console.error("Chart load failed:", e);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => loadChart("30d"));
+</script>
+{% endblock %}

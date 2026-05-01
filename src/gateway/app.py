@@ -43,8 +43,15 @@ from src.gateway.middleware.rate_limit import RateLimitMiddleware
 from src.gateway.middleware.request_id import RequestIDMiddleware
 from src.gateway.middleware.timeout import TimeoutMiddleware
 from src.gateway.middleware.usage_tracking import UsageTrackingMiddleware
+from src.admin_ui.routes import make_session_redirect_response, router as admin_ui_router
+from fastapi.staticfiles import StaticFiles
 from src.gateway.routes.admin_api_keys import router as admin_api_keys_router
+from src.gateway.routes.admin_audit import router as admin_audit_router
 from src.gateway.routes.admin_codex_stderr import router as admin_stderr_router
+from src.gateway.routes.admin_jobs import router as admin_jobs_router
+from src.gateway.routes.admin_tiers import router as admin_tiers_router
+from src.gateway.routes.admin_usage import router as admin_usage_router
+from src.gateway.routes.admin_users import router as admin_users_router
 from src.gateway.routes.chat_completions import router as chat_completions_router
 from src.gateway.routes.jobs import router as jobs_router
 from src.gateway.routes.models import router as models_router
@@ -150,6 +157,29 @@ def create_app() -> FastAPI:
     )
 
     # ── Exception handlers ─────────────────────────────────────────────────
+    # Admin UI: convert session-required 401 into HTMX-aware login redirect.
+    from fastapi import HTTPException as _HTTPException  # noqa: PLC0415
+    from src.admin_ui.routes import _SESSION_REQUIRED_DETAIL  # noqa: PLC0415
+
+    @app.exception_handler(_HTTPException)
+    async def _http_exception_handler(
+        request: Request, exc: _HTTPException
+    ) -> JSONResponse | Response:
+        from fastapi.responses import Response as _Response  # noqa: PLC0415
+
+        if (
+            exc.status_code == 401
+            and exc.detail == _SESSION_REQUIRED_DETAIL
+            and request.url.path.startswith("/admin/ui/")
+        ):
+            return make_session_redirect_response(request)
+        # Default FastAPI behaviour for all other HTTPExceptions.
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=getattr(exc, "headers", None),
+        )
+
     # Reshape FastAPI's default 422 ValidationError into OpenAI's 400 envelope
     # so SDK clients parse it as APIStatusError with type="invalid_request_error".
     @app.exception_handler(RequestValidationError)
@@ -235,11 +265,36 @@ def create_app() -> FastAPI:
     # OpenAI-compatible model listing (auth required via middleware)
     app.include_router(models_router)
 
+    # Admin UI — HTMX + Jinja2 browser interface (session-cookie auth)
+    app.include_router(admin_ui_router)
+    import os as _os  # noqa: PLC0415
+    _static_dir = _os.path.join(_os.path.dirname(__file__), "..", "admin_ui", "static")
+    app.mount(
+        "/admin/ui/static",
+        StaticFiles(directory=_os.path.abspath(_static_dir)),
+        name="admin_ui_static",
+    )
+
     # Admin key management (auth via X-Admin-Token dependency, not bearer)
     app.include_router(admin_api_keys_router, prefix="/admin")
 
+    # Admin tier management (auth via X-Admin-Token, mounted at /admin to bypass bearer middleware)
+    app.include_router(admin_tiers_router, prefix="/admin")
+
+    # Admin job list (auth via X-Admin-Token, /admin/jobs)
+    app.include_router(admin_jobs_router, prefix="/admin")
+
+    # Admin audit log (auth via X-Admin-Token, /admin/audit)
+    app.include_router(admin_audit_router, prefix="/admin")
+
     # Admin stderr retrieval (auth via X-Admin-Token, no prefix — path is /admin/codex/...)
     app.include_router(admin_stderr_router)
+
+    # Admin users list + per-user keys (auth via X-Admin-Token, /admin/users/...)
+    app.include_router(admin_users_router, prefix="/admin")
+
+    # Admin usage time series (auth via X-Admin-Token, /admin/usage/...)
+    app.include_router(admin_usage_router, prefix="/admin")
 
     # Chat completions — phase 03 (auth enforced by AuthMiddleware)
     app.include_router(chat_completions_router)

@@ -1,0 +1,52 @@
+{# Partial: single audit log table row.
+   Context variable: entry — dict with id, created_at, action, target, status, detail
+#}
+<tr class="hover:bg-gray-50">
+  <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+    {% if entry.created_at %}{{ entry.created_at.strftime('%Y-%m-%d %H:%M:%S') }}{% else %}—{% endif %}
+  </td>
+  <td class="px-4 py-3">
+    {% if entry.action %}
+      <span class="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+        {{ entry.action }}
+      </span>
+    {% else %}
+      <span class="text-gray-400 text-xs">—</span>
+    {% endif %}
+  </td>
+  <td class="px-4 py-3 font-mono text-xs text-gray-500 truncate max-w-[160px]" title="{{ entry.target or '' }}">
+    {{ entry.target or '—' }}
+  </td>
+  <td class="px-4 py-3">
+    {% if entry.status %}
+      <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+        {% if entry.status < 300 %}bg-green-100 text-green-700
+        {% elif entry.status < 500 %}bg-amber-100 text-amber-700
+        {% else %}bg-red-100 text-red-700{% endif %}">
+        {{ entry.status }}
+      </span>
+    {% else %}
+      <span class="text-gray-400 text-xs">—</span>
+    {% endif %}
+  </td>
+  <td class="px-4 py-3 text-xs text-gray-500 font-mono truncate max-w-[200px]"
+      title="{{ entry.detail.route if entry.detail else '' }}">
+    {% if entry.detail and entry.detail.method and entry.detail.route %}
+      {{ entry.detail.method }} {{ entry.detail.route }}
+    {% else %}
+      —
+    {% endif %}
+  </td>
+  <td class="px-4 py-3 text-right">
+    <button onclick="toggleDetail({{ entry.id }})"
+            class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+      JSON
+    </button>
+  </td>
+</tr>
+<!-- Collapsible JSON detail row -->
+<tr id="detail-{{ entry.id }}" class="hidden bg-gray-50">
+  <td colspan="6" class="px-4 py-3">
+    <pre class="rounded-lg bg-gray-900 text-gray-100 text-xs p-3 overflow-x-auto max-h-40 overflow-y-auto font-mono whitespace-pre-wrap">{{ entry.detail | tojson(indent=2) if entry.detail else 'null' }}</pre>
+  </td>
+</tr>

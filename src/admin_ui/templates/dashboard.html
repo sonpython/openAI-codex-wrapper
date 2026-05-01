@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-center justify-between">
+  <h2 class="text-lg font-semibold text-gray-800">Dashboard</h2>
+  <button
+    hx-get="/admin/ui/partials/kpis"
+    hx-target="#kpi-grid"
+    hx-swap="outerHTML"
+    hx-indicator="#refresh-spinner"
+    class="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+  >
+    <svg id="refresh-spinner" class="htmx-indicator animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+    </svg>
+    Refresh
+  </button>
+</div>
+
+<!-- KPI Cards — auto-polled every 5s via HTMX -->
+<div
+  id="kpi-grid"
+  class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
+  hx-get="/admin/ui/partials/kpis"
+  hx-target="#kpi-grid"
+  hx-swap="outerHTML"
+  hx-trigger="every 5s"
+>
+  {% include "partials/kpis.html" %}
+</div>
+
+<!-- Sparkline Charts -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+    <h3 class="text-sm font-medium text-gray-600 mb-4">Request Rate (24h)</h3>
+    <canvas id="chart-req" height="120"></canvas>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+    <h3 class="text-sm font-medium text-gray-600 mb-4">Error Rate (24h)</h3>
+    <canvas id="chart-err" height="120"></canvas>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block head %}
+<script>
+  // Sparkline data injected server-side (safe: Jinja2 auto-escapes JSON via tojson).
+  const REQ_DATA  = {{ sparklines.req_24h | tojson }};
+  const ERR_DATA  = {{ sparklines.error_24h | tojson }};
+
+  document.addEventListener("DOMContentLoaded", function () {
+    const labels = REQ_DATA.map((_, i) => `-${REQ_DATA.length - i}h`);
+
+    function makeChart(id, data, color, label) {
+      const ctx = document.getElementById(id);
+      if (!ctx) return;
+      new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: labels.length ? labels : ["no data"],
+          datasets: [{
+            label: label,
+            data: data.length ? data : [0],
+            borderColor: color,
+            backgroundColor: color + "22",
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.4,
+            fill: true,
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { display: false },
+            y: { beginAtZero: true, grid: { color: "#f3f4f6" } }
+          }
+        }
+      });
+    }
+
+    makeChart("chart-req", REQ_DATA, "#6366f1", "req/s");
+    makeChart("chart-err", ERR_DATA, "#ef4444", "errors/s");
+  });
+</script>
+{% endblock %}

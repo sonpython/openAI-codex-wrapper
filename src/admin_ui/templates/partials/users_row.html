@@ -1,0 +1,28 @@
+{# Partial: single user row for users table.
+   Context: u (UserAggregate dataclass)
+   Also used as full table replacement by /users/_table HTMX partial.
+#}
+{% for u in users %}
+<tr class="hover:bg-gray-50 transition-colors">
+  <td class="px-4 py-3 font-mono text-xs text-gray-700 max-w-xs truncate">
+    <a href="/admin/ui/users/{{ u.id }}" class="text-indigo-600 hover:text-indigo-800 hover:underline">
+      {{ u.email }}
+    </a>
+  </td>
+  <td class="px-4 py-3 text-right text-gray-700">{{ u.key_count }}</td>
+  <td class="px-4 py-3 text-right text-gray-700">{{ u.current_month_requests }}</td>
+  <td class="px-4 py-3 text-right text-gray-700">{{ u.current_month_tokens | default(0) }}</td>
+  <td class="px-4 py-3 text-xs text-gray-500">
+    {% if u.created_at %}{{ u.created_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}
+  </td>
+  <td class="px-4 py-3 text-right">
+    <a href="/admin/ui/users/{{ u.id }}"
+       class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Detail →</a>
+  </td>
+</tr>
+{% endfor %}
+{% if not users %}
+<tr>
+  <td colspan="6" class="px-4 py-8 text-center text-gray-400 text-sm">No users found.</td>
+</tr>
+{% endif %}

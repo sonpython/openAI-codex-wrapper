@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — codex-wrapper admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="h-full flex items-center justify-center">
+  <div class="w-full max-w-sm">
+    <div class="bg-white shadow-md rounded-xl px-8 py-10">
+      <h1 class="text-xl font-semibold text-gray-800 mb-6 text-center">
+        codex-wrapper admin
+      </h1>
+
+      {% if error %}
+        <div class="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {{ error }}
+        </div>
+      {% endif %}
+
+      <form method="POST" action="/admin/ui/login">
+        <div class="mb-4">
+          <label for="token" class="block text-sm font-medium text-gray-700 mb-1">
+            Admin Token
+          </label>
+          <input
+            id="token"
+            name="token"
+            type="password"
+            required
+            autocomplete="current-password"
+            class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm
+                   focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            placeholder="Enter admin token"
+          >
+        </div>
+        <button
+          type="submit"
+          class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm
+                 font-medium rounded-md px-4 py-2 transition-colors"
+        >
+          Sign in
+        </button>
+      </form>
+    </div>
+    <p class="mt-4 text-center text-xs text-gray-400">
+      Token is set via <code class="font-mono">ADMIN_TOKEN</code> environment variable.
+    </p>
+  </div>
+</body>
+</html>

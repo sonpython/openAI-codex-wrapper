@@ -1,0 +1,53 @@
+{# Partial: jobs table body + pagination controls.
+   Rendered both on initial page load (inside jobs.html) and as HTMX swap target.
+   Context: jobs, total, limit, offset, has_prev, has_next, prev_offset, next_offset,
+            status_filter, user_id_filter, from_filter, to_filter
+#}
+<span data-jobs-total="{{ total }}" class="hidden"></span>
+
+<div class="rounded-xl bg-white shadow-sm border border-gray-100 overflow-hidden">
+  <table class="min-w-full divide-y divide-gray-200 text-sm">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">ID</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">User</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Mode</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Enqueued</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Duration</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Exit</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Detail</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100" id="jobs-table-body">
+      {% for job in jobs %}
+        {% include "partials/jobs_row.html" %}
+      {% else %}
+        <tr>
+          <td colspan="8" class="px-4 py-6 text-center text-gray-400 text-sm">No jobs found matching filters.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Pagination controls -->
+{% if total > 0 %}
+<div class="mt-4 flex items-center justify-between text-sm text-gray-600">
+  <span>Showing {{ offset + 1 }}–{{ [offset + limit, total]|min }} of {{ total }}</span>
+  <div class="flex gap-2">
+    {% if has_prev %}
+      <button onclick="jobsGoTo({{ prev_offset }})"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50">
+        &larr; Prev
+      </button>
+    {% endif %}
+    {% if has_next %}
+      <button onclick="jobsGoTo({{ next_offset }})"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50">
+        Next &rarr;
+      </button>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
