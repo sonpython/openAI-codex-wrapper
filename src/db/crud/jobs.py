@@ -17,10 +17,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import CursorResult, select, update
+from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import Job
+from src.db.models import Job, User
 
 
 def _now() -> datetime:
@@ -35,10 +35,12 @@ async def create_job(
     branch: str,
     task: str,
     mode: str,
+    api_key_id: UUID | None = None,
 ) -> Job:
     """Insert a new job row with status=queued and return it."""
     job = Job(
         user_id=user_id,
+        api_key_id=api_key_id,
         status="queued",
         repo_url=repo_url,
         branch=branch,
@@ -135,6 +137,24 @@ async def mark_failed(
     )
 
 
+async def update_token_counts(
+    session: AsyncSession,
+    job_id: UUID,
+    input_tokens: int,
+    output_tokens: int,
+) -> None:
+    """Atomic update of token counts on job completion.
+
+    Called by the worker after codex finishes streaming events.
+    Best-effort: if codex doesn't expose token_usage, pass 0 for both.
+    """
+    await session.execute(
+        update(Job)
+        .where(Job.id == job_id)
+        .values(input_tokens=input_tokens, output_tokens=output_tokens)
+    )
+
+
 async def mark_cancelled(
     session: AsyncSession,
     job_id: UUID,
@@ -159,6 +179,68 @@ async def list_orphans(session: AsyncSession) -> list[Job]:
     """Return all jobs stuck in 'running' state (worker crash recovery)."""
     result = await session.execute(select(Job).where(Job.status == "running"))
     return list(result.scalars().all())
+
+
+async def list_with_filters(
+    session: AsyncSession,
+    *,
+    user_id: UUID | None = None,
+    status: str | None = None,
+    from_: datetime | None = None,
+    to: datetime | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """List jobs with optional filters, joined with users.email.
+
+    Returns (items, total) where items is a list of dicts and total is the
+    unfiltered count matching the filter criteria (for pagination).
+    Limit is expected to be pre-clamped by the caller (1-500).
+    """
+    base = select(Job, User.email).join(User, Job.user_id == User.id)
+
+    if user_id is not None:
+        base = base.where(Job.user_id == user_id)
+    if status is not None:
+        base = base.where(Job.status == status)
+    if from_ is not None:
+        base = base.where(Job.enqueued_at >= from_)
+    if to is not None:
+        base = base.where(Job.enqueued_at <= to)
+
+    # Count query
+    count_stmt = select(func.count()).select_from(base.subquery())
+    total: int = (await session.execute(count_stmt)).scalar_one()
+
+    # Data query with ordering + pagination
+    data_stmt = base.order_by(Job.enqueued_at.desc()).offset(offset).limit(limit)
+    rows = (await session.execute(data_stmt)).all()
+
+    items = []
+    for job, user_email in rows:
+        duration_ms: int | None = None
+        if job.started_at and job.finished_at:
+            duration_ms = int((job.finished_at - job.started_at).total_seconds() * 1000)
+        items.append(
+            {
+                "id": str(job.id),
+                "user_email": user_email,
+                "status": job.status,
+                "model": job.mode,
+                "created_at": job.enqueued_at,
+                "completed_at": job.finished_at,
+                "duration_ms": duration_ms,
+                "exit_code": job.exit_code,
+                "prompt_hash": None,  # jobs don't store prompt; field kept for schema compat
+                "repo_url": job.repo_url,
+                "branch": job.branch,
+                "error_code": job.error_code,
+                "error_message": job.error_message,
+                "stderr_tail": job.stderr_tail,
+            }
+        )
+
+    return items, total
 
 
 async def list_active_job_ids(session: AsyncSession) -> set[str]:

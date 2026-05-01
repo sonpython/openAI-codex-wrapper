@@ -20,11 +20,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import delete, text
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.engine import bg_session
 from src.db.models_audit_log import AuditLog
@@ -115,6 +117,68 @@ def emit(
     task: asyncio.Task[None] = asyncio.create_task(_persist(fields))
     _BG_TASKS.add(task)
     task.add_done_callback(_BG_TASKS.discard)
+
+
+async def list_with_filters(
+    session: AsyncSession,
+    *,
+    action: str | None = None,
+    user_id: UUID | None = None,
+    from_: datetime | None = None,
+    to: datetime | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """List audit_log rows with optional filters.
+
+    Returns (items, total) for pagination.
+    Limit is expected to be pre-clamped by the caller (1-500).
+    """
+    base = select(AuditLog)
+
+    if action is not None:
+        base = base.where(AuditLog.action == action)
+    if user_id is not None:
+        base = base.where(AuditLog.user_id == user_id)
+    if from_ is not None:
+        base = base.where(AuditLog.created_at >= from_)
+    if to is not None:
+        base = base.where(AuditLog.created_at <= to)
+
+    count_stmt = select(func.count()).select_from(base.subquery())
+    total: int = (await session.execute(count_stmt)).scalar_one()
+
+    data_stmt = base.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
+    rows = (await session.execute(data_stmt)).scalars().all()
+
+    items = []
+    for row in rows:
+        items.append(
+            {
+                "id": row.id,
+                "created_at": row.created_at,
+                "actor_email": None,  # audit_log stores user_id not email; join omitted for perf
+                "action": row.action,
+                "target": str(row.target_id) if row.target_id else None,
+                "ip": None,  # IP not stored in audit_log schema
+                "status": row.status_code,
+                "detail": {
+                    "request_id": row.request_id,
+                    "route": row.route,
+                    "method": row.method,
+                    "duration_ms": row.duration_ms,
+                    "user_id": str(row.user_id) if row.user_id else None,
+                    "api_key_id": str(row.api_key_id) if row.api_key_id else None,
+                    "admin": row.admin,
+                    "prompt_hash": row.prompt_hash,
+                    "input_tokens": row.input_tokens,
+                    "output_tokens": row.output_tokens,
+                    "error_class": row.error_class,
+                },
+            }
+        )
+
+    return items, total
 
 
 async def purge_old(retention_days: int | None = None) -> int:
