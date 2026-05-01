@@ -11,6 +11,7 @@ Production-grade HTTP API wrapper around `codex exec --json` exposing OpenAI-com
 - **Codex job API** — `/v1/codex/jobs` with ephemeral sandboxed workspaces per task
 - **Multi-tier rate limiting** — RPM / TPM / concurrent / monthly quotas with OpenAI-style headers
 - **Bearer auth + admin API** — API key rotation, per-user audit logs
+- **Admin UI** — Web dashboard at `/admin/ui` (login with `ADMIN_TOKEN`): API key CRUD, tier editor, user usage, job inspector, audit viewer, live KPI polling every 5s
 - **Production observability** — structlog JSON, Prometheus metrics, OpenTelemetry traces, Loki logs, Tempo traces
 - **Hardening** — SSRF guard, timeout middleware, stderr archive, workspace path isolation (Landlock/seccomp on Linux)
 - **Internal-only scope** — ChatGPT login (no external customers under v1); access gate enforces non-public reachability

@@ -347,6 +347,57 @@ git tag v0.x.y-prev-redeploy && git push --tags
 
 ---
 
+## Admin UI Access
+
+### Login
+
+The admin web UI is available at `http://localhost:8000/admin/ui` (dev) or `https://wrapper.internal/admin/ui` (prod via Caddy).
+
+1. Open the login URL in a browser.
+2. Enter the `ADMIN_TOKEN` value from `.env`.
+3. A signed HttpOnly session cookie is set; TTL defaults to 8 hours (`ADMIN_SESSION_TTL_SECONDS`).
+
+**Pages available:**
+| Page | Path |
+|---|---|
+| Dashboard (live KPIs, 5s auto-refresh) | `/admin/ui/` |
+| API Keys CRUD | `/admin/ui/keys` |
+| Tier editor | `/admin/ui/tiers` |
+| Users list + usage aggregates | `/admin/ui/users` |
+| Job inspector | `/admin/ui/jobs` |
+| Audit log viewer | `/admin/ui/audit` |
+
+### Rotate Admin Token
+
+Use the provided script — it generates a new 32-byte hex token, updates `.env`, and restarts only the gateway container:
+
+```bash
+# From the project root on the host (not inside Docker):
+bash scripts/rotate-admin-token.sh
+```
+
+The script:
+1. Generates `NEW=$(openssl rand -hex 32)`
+2. Writes `ADMIN_TOKEN=$NEW` to `.env` (backs up old `.env` as `.env.bak`)
+3. Runs `docker compose up -d --no-deps gateway` to apply without service interruption
+4. **All existing admin sessions are immediately invalidated** (session signing key = admin token)
+
+Dry-run (print new token only, no changes):
+```bash
+bash scripts/rotate-admin-token.sh --dry-run
+```
+
+After rotating, delete `.env.bak` once you have verified the new token works:
+```bash
+rm .env.bak
+```
+
+### Session TTL
+
+Default session TTL is **8 hours** (`ADMIN_SESSION_TTL_SECONDS=28800`). Adjust in `.env` and restart gateway. Sessions are stored in Redis; a Redis flush also invalidates all sessions.
+
+---
+
 ## Common Error Codes
 
 | Code | Symptom | Cause | First Action |
