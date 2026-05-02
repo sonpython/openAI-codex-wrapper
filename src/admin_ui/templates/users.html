@@ -25,14 +25,7 @@
       id="users-table-body"
       class="divide-y divide-gray-100"
     >
-      {% for u in users %}
       {% include "partials/users_row.html" %}
-      {% endfor %}
-      {% if not users %}
-      <tr>
-        <td colspan="6" class="px-4 py-8 text-center text-gray-400 text-sm">No users found.</td>
-      </tr>
-      {% endif %}
     </tbody>
   </table>
 </div>
