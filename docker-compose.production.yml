@@ -49,7 +49,7 @@ services:
     image: ghcr.io/${GHCR_ORG:-your-org}/codex-wrapper-gateway:${IMAGE_TAG:-latest}
     volumes:
       - "${CODEX_AUTH_HOST_DIR:-${HOME}/.codex}:/codex-auth:ro"
-    ports: []   # caddy handles ingress; no direct exposure
+    ports: []   # cloudflared handles ingress; no direct host port exposure
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
 
@@ -63,18 +63,18 @@ services:
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
 
-  caddy:
+  # ── Public ingress: Cloudflare Tunnel (cloudflared) ────────────────────────
+  # No public ports on this host. cloudflared establishes outbound tunnel to
+  # Cloudflare edge; CF terminates TLS and routes the public hostname
+  # (e.g. openai.sonpython.com) → http://gateway:8000 via dashboard ingress
+  # rules. Token configured in CF Zero Trust → Networks → Tunnels.
+  cloudflared:
     <<: *default-restart
     logging: *default-logging
-    image: caddy:2.8.4
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./infra/Caddyfile.production:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-      - caddy_logs:/var/log/caddy
+    image: cloudflare/cloudflared:2025.1.0
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARED_TUNNEL_TOKEN}"
     depends_on:
       gateway:
         condition: service_started
@@ -122,15 +122,16 @@ services:
   grafana:
     <<: *default-restart
     logging: *default-logging
-    image: grafana/grafana:11.2.0
+    image: grafana/grafana:11.3.0
     environment:
-      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
       GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
       GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-change-me-in-prod}"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
       GF_INSTALL_PLUGINS: ""
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
@@ -231,12 +232,6 @@ volumes:
       type: tmpfs
       device: tmpfs
       o: "size=10g,uid=1000"
-  caddy_data:
-    driver: local
-  caddy_config:
-    driver: local
-  caddy_logs:
-    driver: local
   prometheus_data:
     driver: local
   alertmanager_data:

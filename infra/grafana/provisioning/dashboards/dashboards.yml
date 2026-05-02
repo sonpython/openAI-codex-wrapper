@@ -7,6 +7,7 @@ providers:
     disableDeletion: false
     updateIntervalSeconds: 30
     allowUiUpdates: true
+    folder: codex-wrapper
     options:
-      path: /etc/grafana/provisioning/dashboards
+      path: /var/lib/grafana/dashboards
       foldersFromFilesStructure: false

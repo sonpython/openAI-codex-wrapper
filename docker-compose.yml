@@ -75,9 +75,13 @@ services:
       redis:
         condition: service_healthy
 
+  # Caddy is opt-in (profile "caddy"). Production uses Cloudflare Tunnel, dev
+  # serves gateway directly on :8000. Run with `docker compose --profile caddy up -d`
+  # if you want local TLS termination / reverse-proxy testing.
   caddy:
     image: caddy:2
     restart: unless-stopped
+    profiles: ["caddy"]
     ports:
       - "80:80"
       - "443:443"
