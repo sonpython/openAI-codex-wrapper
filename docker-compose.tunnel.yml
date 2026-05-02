@@ -26,22 +26,22 @@ services:
 
   postgres:
     logging: *default-logging
-    ports: []
+    ports: !reset []
 
   redis:
     logging: *default-logging
-    ports: []
+    ports: !reset []
 
   gateway:
     logging: *default-logging
-    ports: []
+    ports: !reset []
 
   worker:
     logging: *default-logging
 
   prometheus:
     logging: *default-logging
-    ports: []
+    ports: !reset []
     # Use the production prometheus.yml with all exporter scrape jobs.
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -55,7 +55,7 @@ services:
 
   grafana:
     logging: *default-logging
-    ports: []
+    ports: !reset []
     environment:
       GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
       GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-change-me-in-prod}"
@@ -70,7 +70,7 @@ services:
 
   otel-collector:
     logging: *default-logging
-    ports: []
+    ports: !reset []
 
   # ── Public ingress: Cloudflare Tunnel ───────────────────────────────────────
 
