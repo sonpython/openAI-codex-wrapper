@@ -60,7 +60,9 @@ AUTH_SKIP_PATHS: frozenset[str] = frozenset(
 # Prefix matches for paths that have sub-routes (e.g. /docs/oauth2-redirect).
 # Kept minimal: only paths where sub-routes legitimately exist and require bypass.
 # IMPORTANT: /healthz, /readyz, /metrics are NOT here — they must be exact only.
-AUTH_SKIP_PREFIXES: tuple[str, ...] = ("/admin/", "/docs/")
+# /_internal/metrics is mounted as an ASGI sub-app so the actual path is
+# /_internal/metrics/ — match by prefix to allow both variants for Prometheus scrape.
+AUTH_SKIP_PREFIXES: tuple[str, ...] = ("/admin/", "/docs/", "/_internal/metrics")
 
 
 def _should_skip(path: str) -> bool:

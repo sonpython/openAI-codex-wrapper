@@ -1,0 +1,20 @@
+# Prometheus scrape config for codex-wrapper local stack.
+# Scrapes the gateway's /_internal/metrics endpoint over the Docker network.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: codex-wrapper-gateway
+    metrics_path: /_internal/metrics
+    static_configs:
+      - targets:
+          - gateway:8000
+        labels:
+          service: gateway
+
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090

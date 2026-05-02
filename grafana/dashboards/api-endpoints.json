@@ -1,0 +1,80 @@
+{
+  "uid": "codex-api-endpoints",
+  "title": "Codex Wrapper — API Endpoints",
+  "tags": ["codex-wrapper", "api"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Request Rate by Route",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (route) (rate(http_requests_total{job=\"codex-wrapper-gateway\"}[1m]))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "p95 Latency by Route",
+      "gridPos": { "x": 0, "y": 9, "w": 24, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket{job=\"codex-wrapper-gateway\"}[5m])))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 3,
+      "type": "bargauge",
+      "title": "Top 10 Routes by Traffic (1h)",
+      "gridPos": { "x": 0, "y": 18, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (route) (increase(http_requests_total{job=\"codex-wrapper-gateway\"}[1h])))",
+          "legendFormat": "{{route}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "continuous-GrYlRd" } } },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true, "valueMode": "color" }
+    },
+    {
+      "id": 4,
+      "type": "piechart",
+      "title": "Status Code Distribution (1h)",
+      "gridPos": { "x": 12, "y": 18, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (increase(http_requests_total{job=\"codex-wrapper-gateway\"}[1h]))",
+          "legendFormat": "{{status}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
+      "options": { "pieType": "donut", "displayLabels": ["name", "percent"], "legend": { "displayMode": "list", "placement": "right" } }
+    }
+  ]
+}

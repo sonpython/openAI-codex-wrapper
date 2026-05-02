@@ -1,0 +1,133 @@
+{
+  "uid": "codex-cli",
+  "title": "Codex Wrapper — Codex CLI",
+  "tags": ["codex-wrapper", "codex"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Active Subprocesses",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(codex_active_subprocess{job=\"codex-wrapper-gateway\"})" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 20 } ] } } },
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "" } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Subprocess Rate (5m)",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(codex_subprocess_duration_seconds_count{job=\"codex-wrapper-gateway\"}[5m]))",
+          "legendFormat": "starts/s"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 2, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 } ] } } },
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "" } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Event Rate (1m)",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(codex_event_total{job=\"codex-wrapper-gateway\"}[1m]))",
+          "legendFormat": "events/s"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 2, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 200 } ] } } },
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "" } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Total Events (1h)",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(codex_event_total{job=\"codex-wrapper-gateway\"}[1h]))",
+          "instant": true
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
+      "options": { "colorMode": "value", "graphMode": "none", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "" } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Codex Events by Type",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (type) (rate(codex_event_total{job=\"codex-wrapper-gateway\"}[1m]))",
+          "legendFormat": "{{type}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "stacking": { "mode": "normal", "group": "A" } } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Subprocess Duration (p50 / p95 / p99)",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(codex_subprocess_duration_seconds_bucket{job=\"codex-wrapper-gateway\"}[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(codex_subprocess_duration_seconds_bucket{job=\"codex-wrapper-gateway\"}[5m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(codex_subprocess_duration_seconds_bucket{job=\"codex-wrapper-gateway\"}[5m])))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0 } } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Top Codex Event Types (1h)",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (type) (increase(codex_event_total{job=\"codex-wrapper-gateway\"}[1h])))",
+          "legendFormat": "{{type}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "continuous-BlPu" } } },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true, "valueMode": "color" }
+    }
+  ]
+}
