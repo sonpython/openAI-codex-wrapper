@@ -2,7 +2,7 @@
 
 **Project:** Codex CLI OpenAI-Compatible Wrapper  
 **Deployment:** Docker Compose + Caddy on single VM (internal-only via access gate)  
-**Components:** FastAPI gateway + Arq worker + Postgres + Redis + Loki + Tempo + Prometheus
+**Components:** FastAPI gateway + Arq worker + Postgres + Redis + Loki + Tempo + Prometheus + Grafana + Admin UI
 
 ## Table of Contents
 
@@ -35,8 +35,9 @@
 │ Caddy 2 (Reverse Proxy + ACME TLS)                                  │
 │  Port 80 (redirect HTTPS) / 443 (TLS)                               │
 │  Routes:                                                            │
-│    /v1/* → :8000 (FastAPI gateway)                                 │
-│    /_internal/metrics → :9090 (Prometheus scrape)                  │
+│    /v1/* → :8000 (FastAPI gateway, auth-required)                 │
+│    /admin/* → :8000 (FastAPI admin UI, cookie-session auth)       │
+│    /_internal/metrics → Prometheus scrape endpoint                │
 └──────────────────────────┬──────────────────────────────────────────┘
                            │
               ┌────────────┴────────────┐
@@ -99,7 +100,7 @@ Observability Stack:
 │            ┌────────────────┐                               │
 │            │ Grafana        │                               │
 │            │ (dashboards)   │                               │
-│            │ :3000          │                               │
+│            │ :3001 (port)   │                               │
 │            └────────────────┘                               │
 └─────────────────────────────────────────────────────────────┘
 
@@ -230,10 +231,11 @@ See [System Architecture: Modules & Data Flow](system-architecture-modules.md) f
 
 **Tables:**
 - `users` — User accounts (email, created_at)
-- `api_keys` — Bearer tokens (key_hash, plan_id, status, expires_at)
-- `jobs` — Task history (repo_url, branch, task, status, result, error, expires_at)
+- `api_keys` — Bearer tokens (key_hash, plan_id, status, expires_at, api_key_id for job tracking)
+- `jobs` — Task history (repo_url, branch, task, status, result, error, expires_at, api_key_id FK, input_tokens, output_tokens)
 - `plans` — Rate-limit tiers (rpm_quota, tpm_quota, concurrent_quota, monthly_quota)
 - `audit_log` — API call logging (user_id, method, path, status, duration_ms, error)
+- `usage_daily` — Daily per-user/per-key request + token aggregates (composite PK: user_id, api_key_id, period=date; indexed)
 - `usage_counter` — Monthly usage per user (month, tokens_used, requests)
 
 ### Redis (Cache & Queue)
@@ -251,7 +253,7 @@ See [System Architecture: Modules & Data Flow](system-architecture-modules.md) f
 
 ## Authentication Model
 
-### Bearer Token Flow
+### Bearer Token Flow (API)
 
 1. User creates API key: `POST /v1/admin/api-keys`
 2. Server generates + hashes: `raw_key = "sk-" + random(32)`, `key_hash = argon2id(raw_key)`
@@ -259,6 +261,20 @@ See [System Architecture: Modules & Data Flow](system-architecture-modules.md) f
 4. Client request: `Authorization: Bearer sk-abc123...`
 5. Gateway auth middleware: lookup, verify, set `request.user`
 6. All API calls logged to `audit_log` (per-key audit trail)
+
+### Admin UI Cookie Session Auth
+
+- **Route:** `/admin/ui/*` (HTMX + Jinja2 + Tailwind/Chart.js CDN)
+- **Auth method:** Cookie-based HMAC-SHA256 signed session (Redis-backed, 8h TTL)
+- **Login:** `POST /admin/ui/login` with `ADMIN_TOKEN`
+- **Cookie:** HttpOnly + SameSite=Strict, refresh on each request
+- **Pages:**
+  - `/admin/ui/` — Dashboard (KPI cards, sparkline charts, 5s polling)
+  - `/admin/ui/keys` — API key CRUD (create, revoke, rotate, tier change)
+  - `/admin/ui/tiers` — Tier RPM/TPM/concurrent/monthly editor with cache invalidation
+  - `/admin/ui/jobs` — Job inspector with stderr proxy modal
+  - `/admin/ui/audit` — Audit log viewer
+  - `/admin/ui/users` — Per-user usage with 30-day daily usage chart
 
 ---
 
@@ -352,4 +368,4 @@ For in-depth coverage, see:
 
 ---
 
-**Last Updated:** 2026-04-29 (tool-calling synthesis, HA EOC verified, oversized doc split)
+**Last Updated:** 2026-05-02 (admin UI, daily usage tracking, Prometheus + Grafana integration, Phase 07-10 complete)

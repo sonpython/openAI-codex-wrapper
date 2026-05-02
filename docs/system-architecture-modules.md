@@ -245,4 +245,154 @@ Prevents: network access, system call access, file access outside workspace.
 
 ---
 
-**Last Updated:** 2026-04-29
+## Admin UI Module (HTMX + Jinja2 Dashboard)
+
+### Overview
+
+`src/admin_ui/` provides a web-based management console at `/admin/ui/*` (mounted via Caddy at `/admin/ui` in production, `/admin/ui` direct in dev).
+
+### Authentication: Cookie-Session HMAC-SHA256
+
+1. User navigates to `/admin/ui/login`
+2. Form posts `ADMIN_TOKEN` value
+3. Server computes: `session_hash = HMAC-SHA256(ADMIN_TOKEN, signed_timestamp)`
+4. Sets cookie: `__session_hmac` (HttpOnly, SameSite=Strict, TTL 8h)
+5. Subsequent requests verify: `HMAC-SHA256(ADMIN_TOKEN, timestamp)` matches cookie
+6. Session stored in Redis with TTL for rate-limit / revocation
+
+Key files:
+- `src/admin_ui/auth.py` — Sign/verify session, Redis CRUD
+- `src/gateway/middleware/auth.py` — Added `/admin/*` to `AUTH_SKIP_PREFIXES` (cookie auth handles `/admin/ui/login`, then redirects)
+
+### Pages & Data Flow
+
+| Page | Route | Data Source | Features |
+|------|-------|-------------|----------|
+| Dashboard | `/admin/ui/` | Prometheus queries (5s cache) | KPI cards (req rate, error rate, queue depth, active jobs); auto-refresh every 5s via HTMX |
+| API Keys | `/admin/ui/keys` | GET `/admin/keys` (auth-required) | Create, revoke, rotate keys; change tier |
+| Tiers | `/admin/ui/tiers` | GET/PUT `/admin/tiers` | Edit RPM/TPM/concurrent/monthly; cache invalidation on PUT |
+| Users | `/admin/ui/users` | GET `/admin/users` (with LEFT JOIN usage_daily) | Per-user list; detail page with 30-day daily usage Chart.js graph |
+| Jobs | `/admin/ui/jobs` | GET `/admin/jobs` (paginated) | Job list with status; modal shows job stderr via proxy |
+| Audit | `/admin/ui/audit` | GET `/admin/audit` | Audit log viewer (method, path, status, error, duration) |
+
+### Prometheus Integration
+
+`src/admin_ui/prom_client.py` queries Prometheus at `PROMETHEUS_URL`:
+
+```python
+def query_prometheus(expr: str, timeout_seconds: int = 2) -> dict:
+    """Query Prometheus via HTTP API with 5s client-side cache."""
+    # Caches results in Redis: `prom:cache:{hash(expr)}`
+    # Falls back to parsing `/_internal/metrics` text-format if Prometheus unreachable
+```
+
+Dashboard polls every 5 seconds; metrics include:
+- `rate(codex_wrapper_request_duration_seconds_bucket[1m])` — requests/sec
+- `rate(codex_wrapper_request_errors_total[1m])` — errors/sec
+- `codex_wrapper_job_queue_depth` — pending jobs
+- `count(up{job="gateway"})` — active codex subprocesses
+
+---
+
+## Daily Usage Tracking (`usage_daily` Table)
+
+### Schema
+
+```sql
+CREATE TABLE usage_daily (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    api_key_id UUID REFERENCES api_keys(id) ON DELETE SET NULL,
+    period DATE NOT NULL,
+    requests BIGINT NOT NULL DEFAULT 0,
+    input_tokens BIGINT NOT NULL DEFAULT 0,
+    output_tokens BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, api_key_id, period),
+    UNIQUE (api_key_id, period)
+);
+
+CREATE INDEX ix_usage_daily_user_period ON usage_daily(user_id, period);
+CREATE INDEX ix_usage_daily_api_key_period ON usage_daily(api_key_id, period);
+```
+
+### Writers
+
+Two async paths:
+
+1. **Chat Completions middleware** — after route handler completes:
+   ```python
+   # src/gateway/middleware/usage_tracking.py
+   async def track_usage(request, response):
+       # Background task queues:
+       await usage_daily.upsert(
+           user_id, api_key_id, today,
+           requests=1,
+           input_tokens=estimate(request),
+           output_tokens=estimate(response)
+       )
+   ```
+
+2. **Jobs worker** — after job finishes:
+   ```python
+   # src/workers/job_handlers.py
+   async def run_codex_job(...):
+       # After mark_succeeded():
+       await usage_daily.upsert(
+           user_id, api_key_id, today,
+           requests=1,
+           input_tokens=job.input_tokens,
+           output_tokens=job.output_tokens
+       )
+   ```
+
+### Atomic Upsert Pattern
+
+Uses SQLAlchemy `pg_insert().on_conflict_do_update()`:
+
+```python
+# src/db/crud/usage_daily.py
+async def upsert(
+    session: AsyncSession,
+    user_id: UUID,
+    api_key_id: UUID | None,
+    period: date,
+    requests: int = 0,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+):
+    """Atomically upsert: INSERT OR ADD to existing row."""
+    stmt = (
+        pg_insert(UsageDaily).values(
+            user_id=user_id,
+            api_key_id=api_key_id,
+            period=period,
+            requests=requests,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+        .on_conflict_do_update(
+            index_elements=["user_id", "api_key_id", "period"],
+            set_=dict(
+                requests=UsageDaily.requests + requests,
+                input_tokens=UsageDaily.input_tokens + input_tokens,
+                output_tokens=UsageDaily.output_tokens + output_tokens,
+            )
+        )
+    )
+    await session.execute(stmt)
+    await session.commit()
+```
+
+### Query Pattern (Admin UI)
+
+30-day per-user usage (used by `/admin/ui/users/{user_id}`):
+
+```python
+# SELECT all usage_daily rows for a user, past 30 days
+# GROUP BY period, SUM requests/tokens
+# ORDER BY period DESC
+# Result: daily_usage_dict = {date: {requests, input_tokens, output_tokens}}
+```
+
+---
+
+**Last Updated:** 2026-05-02 (admin UI, daily usage tracking, Prometheus integration, Phase 07-10 complete)

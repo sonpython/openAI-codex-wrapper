@@ -11,8 +11,9 @@ Production-grade HTTP API wrapper around `codex exec --json` exposing OpenAI-com
 - **Codex job API** — `/v1/codex/jobs` with ephemeral sandboxed workspaces per task
 - **Multi-tier rate limiting** — RPM / TPM / concurrent / monthly quotas with OpenAI-style headers
 - **Bearer auth + admin API** — API key rotation, per-user audit logs
-- **Admin UI** — Web dashboard at `/admin/ui` (login with `ADMIN_TOKEN`): API key CRUD, tier editor, user usage, job inspector, audit viewer, live KPI polling every 5s
-- **Production observability** — structlog JSON, Prometheus metrics, OpenTelemetry traces, Loki logs, Tempo traces
+- **Admin UI** — Web dashboard at `/admin/ui` (login with `ADMIN_TOKEN`): API key CRUD, tier editor, per-user usage (30d chart), job inspector, audit viewer, live KPI polling every 5s
+- **Daily usage tracking** — Atomic per-key + per-user request/token aggregates, `usage_daily` table with indexes
+- **Production observability** — structlog JSON, Prometheus + Grafana dashboards, OpenTelemetry traces, Loki logs, Tempo traces
 - **Hardening** — SSRF guard, timeout middleware, stderr archive, workspace path isolation (Landlock/seccomp on Linux)
 - **Internal-only scope** — ChatGPT login (no external customers under v1); access gate enforces non-public reachability
 
@@ -112,9 +113,11 @@ FastAPI Gateway (uvicorn)
     ├─► Inline SSE: chat-completions (with tool-calling), responses API
     │   └─► codex.runner (subprocess)
     │
+    ├─► Admin UI: /admin/ui/* (HTMX + Jinja2, cookie-session auth)
+    │
     └─► Arq queue: jobs
         ├─► Redis (queue + rate-limit sliding window)
-        └─► Postgres (users, api_keys, jobs, audit_log, usage_counter)
+        └─► Postgres (users, api_keys, jobs, audit_log, usage_daily)
         └─► Arq worker (async background tasks)
             └─► codex exec --json (subprocess)
             └─► /workspaces/{job_id} (ephemeral per task)
@@ -122,8 +125,9 @@ FastAPI Gateway (uvicorn)
 
 Observability:
 - Logs: structlog JSON → stdout → Promtail → Loki
-- Metrics: Prometheus scrape `:9090/_internal/metrics` (16 instruments)
+- Metrics: Prometheus scrape `/_internal/metrics` (16 instruments) → Grafana dashboards
 - Traces: OTEL OTLP → Tempo (distributed tracing)
+- Dashboards: http://localhost:3001 (Grafana, default `admin/admin`)
 
 ## Development Setup
 
@@ -172,11 +176,12 @@ codex-wrapper/
 ├── src/
 │   ├── settings.py (pydantic-settings, env vars)
 │   ├── redis_client.py
+│   ├── admin_ui/ (HTMX web UI, cookie-session auth, pages for keys/tiers/jobs/audit/users)
 │   ├── auth/ (hashing, bearer, errors)
 │   ├── chat/ (prompt_builder, sync/stream handlers, tool_calling synthesis)
 │   ├── codex/ (runner, jsonl_parser, workspace, exceptions, events)
-│   ├── db/ (engine, models, crud, migrations)
-│   ├── gateway/ (FastAPI app, routes, middleware, schemas)
+│   ├── db/ (engine, models, crud, migrations, usage_daily model)
+│   ├── gateway/ (FastAPI app, routes, middleware, schemas, admin_* data endpoints)
 │   ├── observability/ (logging, metrics, tracing, alert webhooks)
 │   ├── responses/ (events_emitter, handlers, helpers)
 │   ├── workers/ (arq worker, job handlers, git ops, janitor, event publisher)
@@ -265,4 +270,4 @@ Internal use only. See LICENSE file for details.
 
 ---
 
-**Last Updated:** 2026-04-29 (v1 with tool-calling synthesis + HA EOC verification)
+**Last Updated:** 2026-05-02 (v1 with admin UI, daily usage tracking, Grafana dashboards, Phase 07-10 complete)

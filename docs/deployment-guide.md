@@ -43,7 +43,9 @@ Postgres data and Redis AOF are stored on named Docker volumes (default: `/var/l
 |---|---|---|---|
 | 22 | TCP | Inbound | SSH admin access |
 | 80 | TCP | Inbound | Caddy HTTP→HTTPS redirect |
-| 443 | TCP | Inbound | Caddy HTTPS (API) |
+| 443 | TCP | Inbound | Caddy HTTPS (API + admin UI) |
+| 3001 | TCP | Inbound (via tunnel) | Grafana dashboards (local dev: :3001) |
+| 9090 | TCP | Inbound (via tunnel) | Prometheus (local dev: :9090) |
 | All others | — | Inbound | DENY |
 
 ---
@@ -67,7 +69,8 @@ $EDITOR .env
 | `BACKUP_AGE_RECIPIENT` | age public key for backup encryption | `age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p` |
 | `BACKUP_S3_BUCKET` | S3/R2/B2 bucket name | `codex-wrapper-backups` |
 | `SLACK_WEBHOOK_URL` | Incoming webhook URL | `https://hooks.slack.com/...` |
-| `GRAFANA_ADMIN_PASSWORD` | Grafana admin password | `openssl rand -hex 16` |
+| `GRAFANA_ADMIN_PASSWORD` | Grafana admin password (rotate before prod) | `openssl rand -hex 16` |
+| `PROMETHEUS_URL` | Prometheus URL for admin UI queries | `http://prometheus:9090` |
 | `GHCR_ORG` | GitHub org/user for image pulls | `your-org` |
 | `IMAGE_TAG` | Image tag to deploy | `v0.1.0` |
 
@@ -80,6 +83,12 @@ $EDITOR .env
 | `AWS_DEFAULT_REGION` | `us-east-1` | S3 region |
 | `OTEL_SAMPLER_RATIO` | `0.1` | Trace sampling (1.0 = 100%) |
 | `ACCESS_GATE_KIND` | `caddy-ip` | Documents chosen access gate (informational) |
+
+### Security Notes
+
+- **Grafana default creds (`admin/admin`)** must be rotated immediately after first login. Change via Grafana UI: User Menu → Change Password.
+- **PROMETHEUS_URL** should use internal Docker network address in compose; external access via SSH tunnel only.
+- **Volume retention:** `grafana_data` and `prometheus_data` are persisted across restarts; include in backup strategy.
 
 ---
 
@@ -196,8 +205,8 @@ Run quarterly. Goal: < 30 min end-to-end restore on a sandbox VM.
 All monitoring UIs are on the internal Docker network. Access via SSH tunnel:
 
 ```bash
-# Open all tunnels at once:
-ssh -L 3000:localhost:3000 \   # Grafana
+# Open all tunnels at once (note: Grafana mapped to port 3001):
+ssh -L 3001:localhost:3001 \   # Grafana (default admin/admin, ROTATE PASSWORD!)
     -L 9090:localhost:9090 \   # Prometheus
     -L 9093:localhost:9093 \   # Alertmanager
     root@<VM_IP>
@@ -205,6 +214,11 @@ ssh -L 3000:localhost:3000 \   # Grafana
 
 | Service | URL | Credentials |
 |---|---|---|
-| Grafana | http://localhost:3000 | `admin` / `$GRAFANA_ADMIN_PASSWORD` |
-| Prometheus | http://localhost:9090 | none (internal only) |
-| Alertmanager | http://localhost:9093 | none (internal only) |
+| **Grafana** | http://localhost:3001 | `admin` / `$GRAFANA_ADMIN_PASSWORD` (rotate immediately) |
+| **Prometheus** | http://localhost:9090 | none (internal only) |
+| **Alertmanager** | http://localhost:9093 | none (internal only) |
+
+**Grafana Dashboards (auto-provisioned):**
+- **System Overview** — Request rate, error rate, latency p50/p95/p99, queue depth, active jobs
+- **API Endpoints** — Per-route request rate, p95 latency, top-10 routes, status codes
+- **Codex CLI** — Event types, subprocess duration percentiles, top event types

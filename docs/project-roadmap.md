@@ -34,7 +34,10 @@
 | **Structured Logging** | ✅ | JSON logs with request_id propagation; secret redaction |
 | **Backup & Disaster Recovery** | ✅ | Daily pg_dump + age encryption → S3; quarterly restore drill |
 | **Admin API** | ✅ | POST /v1/admin/api-keys, PUT rotate, GET stderr archive |
+| **Admin UI Dashboard** | ✅ | HTMX + Jinja2 web UI: key CRUD, tier editor, job inspector, audit viewer, user usage (30d chart) |
+| **Daily Usage Tracking** | ✅ | Per-key/per-user daily aggregates (usage_daily table, atomic upserts) |
 | **Docker Compose Deploy** | ✅ | Single VM stack: gateway, worker, postgres, redis, caddy, otel, loki, tempo, prometheus, grafana |
+| **Grafana Dashboards** | ✅ | 3 dashboards (system-overview, api-endpoints, codex-cli) with auto-provisioning |
 | **Access Gate** | ✅ | Internal-only reachability (Cloudflare Access / Tailscale / IP allowlist TBD) |
 | **SDK Compat Tests** | ✅ | Python + Node.js smoke tests; weekly real-codex drift cron |
 | **HA EOC Compatibility** | ✅ | Extended OpenAI Conversation end-to-end verified with nested array schemas |
@@ -42,7 +45,7 @@
 ### Metrics Achieved
 
 - ✅ **615+ unit tests** passing (27 new tests for tool-calling in v1.0)
-- ✅ **~10,500 LOC** in src/ (88 modules: +7 new for tool-calling, redis_lua, workers)
+- ✅ **~10,500+ LOC** in src/ (95+ modules: +15 new for admin_ui, usage_daily, grafana)
 - ✅ **p95 first-token latency** < 2s on /v1/chat/completions stream
 - ✅ **Rate-limit accuracy** ±1% at 100 req/s
 - ✅ **Zero cross-job workspace leak** (integration tests)
@@ -50,6 +53,9 @@
 - ✅ **Weekly drift detection** (real-codex cron enabled)
 - ✅ **Access gate verified** (external port-scan returns zero open /v1/* ports)
 - ✅ **HA EOC multi-turn with nested schemas** verified end-to-end
+- ✅ **Admin UI fully functional** (HTMX/Jinja2 dashboard with cookie-session auth)
+- ✅ **Daily usage tracking atomic** (usage_daily with pg_insert.on_conflict_do_update)
+- ✅ **Grafana 3 dashboards** auto-provisioned with Prometheus integration
 
 ---
 
@@ -69,7 +75,7 @@
 | **Webhook Callbacks for Jobs** | Medium | M | Planned | POST {callback_url} when job completes. Requires job state machine + webhook retry logic. |
 | **TPM Window-Boundary Fairness** | Medium | S | Planned | Replace single-bucket TPM with two-bucket interpolation (defer from v1 if ≤1.5x burst observed). |
 | **Stderr Archive → S3 Default** | Medium | S | Planned | Current: Postgres blob. Offload large stderr to S3; keep index in DB. |
-| **Usage Reporting UI** | Low | M | Planned | Internal dashboard: monthly token usage, cost simulation, quota headroom. |
+| **Usage Reporting UI** | Low | M | DONE (v1.0) | Admin UI: per-user usage with 30d daily Chart.js graph, request/token aggregates. |
 | **Job Result Webhook Signing** | Medium | S | Planned | HMAC-SHA256 signing for webhook payloads (security best practice). |
 | **Auto-PR Generation** | Low | L | Deferred | Jobs→GitHub PR integration. Scope creep; defer post-v1. |
 
@@ -306,5 +312,5 @@
 
 ---
 
-**Last Updated:** 2026-04-29 (tool-calling synthesis completed + HA EOC verified, phases 07-10 finalized)  
+**Last Updated:** 2026-05-02 (admin UI, daily usage tracking, Grafana dashboards, Phase 07-10 complete, v1 feature-complete)  
 **Next Review:** Post-v1 launch (feedback-driven)

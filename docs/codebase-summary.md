@@ -16,6 +16,16 @@ src/
 ├── settings.py                      (10k) pydantic-settings, env vars, pool sizing
 ├── redis_client.py                  Redis async client singleton
 │
+├── admin_ui/                        Web dashboard + management UI (HTMX/Jinja2)
+│   ├── __init__.py
+│   ├── auth.py                      Cookie-session HMAC signing, Redis-backed sessions
+│   ├── prom_client.py               Prometheus query helper, 5s server-side cache
+│   ├── routes.py                    Main router (login, dashboard, pages)
+│   ├── {keys,tiers,jobs,audit,users}_page_routes.py — Per-page routers
+│   ├── templates_env.py             Jinja2 environment singleton
+│   ├── templates/                   HTML templates (dashboard, modals, forms)
+│   └── static/                      CSS/JS assets (Tailwind CDN, Chart.js CDN)
+│
 ├── auth/                            API key auth (bearer tokens)
 │   ├── __init__.py
 │   ├── bearer.py                    Extract + validate bearer token from headers
@@ -46,14 +56,16 @@ src/
 │   ├── engine.py                    SQLAlchemy 2.0 engine (dual pool: main 20/10, bg 3/0)
 │   ├── models.py                    ORM models (users, api_keys, jobs, plans, usage_counter)
 │   ├── models_audit_log.py          Audit log ORM model
+│   ├── models_usage_daily.py        Daily usage aggregates (NEW) (user_id, api_key_id, date composite PK)
 │   ├── crud/                        Data access layer
 │   │   ├── __init__.py
 │   │   ├── users.py                 Create, read, list users
 │   │   ├── api_keys.py              Create, read, rotate, revoke API keys
-│   │   ├── jobs.py                  Create, read, update, delete jobs
+│   │   ├── jobs.py                  Create, read, update, delete jobs; capture api_key_id + token counts
 │   │   ├── audit_log.py             Log API calls
 │   │   ├── plans.py                 Read plan tiers (rate limit quotas)
-│   │   └── usage_counter.py         Track monthly usage per user
+│   │   ├── usage_counter.py         Track monthly usage per user
+│   │   └── usage_daily.py           Atomic upsert daily aggregates (requests + tokens)
 │   └── migrations/                  Alembic migrations
 │       ├── env.py                   Migration config
 │       └── versions/
@@ -88,7 +100,12 @@ src/
 │   │   ├── responses.py             POST /v1/responses (sync + SSE, 50+ events)
 │   │   ├── jobs.py                  (289 LOC) POST/GET/DELETE /v1/codex/jobs*
 │   │   ├── admin_api_keys.py        POST /v1/admin/api-keys, PUT rotate
-│   │   └── admin_codex_stderr.py    GET /v1/codex/stderr/{job_id}
+│   │   ├── admin_codex_stderr.py    GET /v1/codex/stderr/{job_id}
+│   │   ├── admin_tiers.py           (NEW) GET/PUT /admin/tiers (tier editor with cache invalidation)
+│   │   ├── admin_jobs.py            (NEW) GET /admin/jobs (paginated job list)
+│   │   ├── admin_audit.py           (NEW) GET /admin/audit (audit log viewer)
+│   │   ├── admin_users.py           (NEW) GET /admin/users, GET /admin/users/{user_id}/keys
+│   │   └── admin_usage.py           (NEW) GET /admin/usage/summary, GET /admin/usage/by-key/{key_id}
 │   └── schemas/
 │       ├── __init__.py
 │       ├── chat_request.py          Request/response schemas for chat endpoint
@@ -114,7 +131,7 @@ src/
 ├── workers/                         Arq background tasks + job lifecycle
 │   ├── __init__.py
 │   ├── arq_worker.py                Arq worker entrypoint (async job runner)
-│   ├── job_handlers.py              Task handlers (clone, run, diff, publish events)
+│   ├── job_handlers.py              Task handlers (clone, run, diff, publish events, usage_daily upsert)
 │   ├── event_publisher.py           (NEW) Publish job events to Redis pub/sub
 │   ├── git_clone.py                 Clone repo to ephemeral workspace
 │   ├── git_diff.py                  (NEW) Generate diff after codex run
@@ -134,6 +151,9 @@ src/
 
 | Module | Purpose | Key Classes / Functions |
 |--------|---------|------------------------|
+| `admin_ui.auth` | Cookie-session HMAC sign/verify, Redis session CRUD | `sign_session()`, `verify_session()`, `create_session()` |
+| `admin_ui.prom_client` | Prometheus query helper, 5s server-side cache | `query_prometheus()`, `get_dashboard_metrics()` |
+| `admin_ui.routes` | Main admin UI router (login, dashboard dispatch) | `login_page()`, `dashboard_page()` |
 | `auth.bearer` | Extract bearer token from Authorization header | `extract_bearer_token()`, `validate_api_key()` |
 | `auth.hashing` | argon2id hash/verify for API keys | `hash_key()`, `verify_key()` |
 | `chat.prompt_builder` | Format SDK messages into Codex prompt (multi-turn with tool_calls) | `build_prompt_for_codex()` |
@@ -146,10 +166,12 @@ src/
 | `codex.events` | Domain event classes (Input, Output, Error, etc.) | `CodexEvent`, subclasses per event type |
 | `db.engine` | SQLAlchemy dual-pool engine config | `get_engine()`, `main_session()`, `bg_session()` |
 | `db.crud.api_keys` | CRUD for API keys (create, rotate, revoke) | `create_api_key()`, `rotate_key()`, `validate_key()` |
-| `db.crud.jobs` | CRUD for jobs (enqueue, poll, cancel) | `create_job()`, `get_job()`, `update_job_status()` |
+| `db.crud.jobs` | CRUD for jobs (enqueue, poll, cancel) | `create_job()`, `get_job()`, `update_job_status()`, `update_token_counts()` |
+| `db.crud.usage_daily` | Atomic upsert daily usage aggregates | `upsert()` (pg_insert.on_conflict_do_update) |
 | `gateway.app` | FastAPI factory + middleware stack | `create_app()`, lifespan handlers |
 | `gateway.middleware.auth` | Bearer token → user lookup + request.user | `auth_middleware()` |
 | `gateway.middleware.rate_limit` | Multi-tier rate limit enforcement | `RateLimitMiddleware`, RPM/TPM/concurrent logic |
+| `gateway.middleware.usage_tracking` | Async audit log + usage_daily writes | `track_usage()`, background task queue |
 | `gateway.routes.chat_completions` | POST /v1/chat/completions (sync + SSE, tool_calls support) | `chat_completions_sync()`, `chat_completions_stream()` |
 | `gateway.routes.jobs` | POST/GET/DELETE /v1/codex/jobs* | `enqueue_job()`, `get_job()`, `cancel_job()`, `stream_events()` |
 | `observability.logging` | structlog setup + secret redaction | `configure_logging()`, `RedactionProcessor` |
@@ -239,17 +261,18 @@ observability (cross-cutting)
 
 | Category | Count |
 |----------|-------|
-| Python source files | 81 |
-| Total lines of code (src/) | ~9,500 |
+| Python source files | 95+ (admin_ui, usage_daily, admin data routes) |
+| Total lines of code (src/) | ~10,500+ |
 | Unit test files | 65 |
 | Unit tests | 615 |
-| Classes | ~85 |
-| Functions | ~185 |
+| Classes | ~90+ |
+| Functions | ~200+ |
 | Prometheus metrics | 16 |
 | OpenAI event types | 50+ |
-| DB tables | 6 (users, api_keys, jobs, plans, audit_log, usage_counter) |
-| Redis namespaces | 5 (rate-limit keys, queue, pub/sub, cancel flags, cache) |
-| Docker containers | 5 (gateway, worker, postgres, redis, caddy) |
+| DB tables | 7 (users, api_keys, jobs, plans, audit_log, usage_daily, usage_counter) |
+| Redis namespaces | 6 (rate-limit keys, queue, pub/sub, cancel flags, cache, sessions) |
+| Docker containers | 8 (gateway, worker, postgres, redis, caddy, prometheus, grafana, otel-collector) |
+| Grafana dashboards | 3 (system-overview, api-endpoints, codex-cli) |
 
 ---
 
@@ -364,4 +387,4 @@ Key environment variables:
 
 ---
 
-**Last Updated:** 2026-04-29 (tool-calling synthesis, HA EOC nested schema support, new observability modules)
+**Last Updated:** 2026-05-02 (admin UI, daily usage tracking, Grafana dashboards, Phase 07-10 complete)

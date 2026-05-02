@@ -53,10 +53,17 @@ Teams using Codex CLI today must:
 - API key prefix shown once at creation (UX pattern from cloud platforms)
 - Per-user audit log (all API calls recorded to `audit_log` table)
 - Admin API for key rotation + management
+- **Admin UI dashboard** (HTMX + Jinja2): API key CRUD, tier editor, job inspector, audit viewer, 30-day per-user usage charts
+
+### Usage Tracking & Reporting
+- **Daily aggregates:** Per-user + per-key request/token counts (atomic `usage_daily` table with pg_insert.on_conflict_do_update)
+- **30-day charts:** Chart.js graphs of daily usage by user (available in admin UI `/admin/ui/users/{user_id}`)
+- **Admin dashboard:** Real-time KPIs (request rate, error rate, queue depth, active jobs) with 5s auto-refresh
 
 ### Production Observability
 - **Logging:** structlog JSON (request_id, service, level, event, ts) → Promtail → Loki
 - **Metrics:** 16 Prometheus instruments (latency p50/p95/p99, error counts, queue depth, rate-limit headroom, job duration, workspace usage)
+- **Dashboards:** Grafana with 3 auto-provisioned dashboards (system-overview, api-endpoints, codex-cli events) + 5s refresh for admin KPI cards
 - **Tracing:** OpenTelemetry OTLP → Tempo (distributed tracing across gateway + workers)
 - **Alerting:** Prometheus alertmanager rules for critical paths (auth failures, queue backlog, workspace errors)
 
@@ -83,7 +90,9 @@ Teams using Codex CLI today must:
 | **Cancellation** | DELETE → SIGTERM → 5s grace → SIGKILL | Quick stop without zombie cleanup burden. |
 | **GitHub Clone** | Public repos only (v1; private rejected 422) | SSRF + auth overhead deferred. v1.1: add GitHub PAT support. |
 | **Deployment** | Docker Compose + Caddy 2 (TLS) on single VM | Single-node start. VM behind access gate. Vertical scale sufficient for <1k internal users. |
-| **Observability Stack** | structlog + Prometheus + OpenTelemetry → Loki + Tempo + Grafana | Self-hosted (fits Docker Compose). Grafana-native integrations. No AWS lock-in. Free. |
+| **Observability Stack** | structlog + Prometheus + OpenTelemetry → Loki + Tempo + Grafana + 3 dashboards | Self-hosted (fits Docker Compose). Grafana-native integrations. No AWS lock-in. Free. |
+| **Admin UI** | HTMX + Jinja2 + cookie-session HMAC auth | Minimal JavaScript (HTMX for interactivity). Cookie-session signing key = ADMIN_TOKEN; rotatable via script. No separate auth service. |
+| **Usage Tracking** | Daily per-user/per-key aggregates (usage_daily table, atomic upserts) | Real-time tracking for audit + reporting. 30-day charts in admin UI. Basis for future billing (v2). |
 | **Backup** | `pg_dump | age | s3` | age = modern key mgmt; single pubkey recipient; no GnuPG keyring drama. |
 | **Drift Defense** | Weekly GH Actions cron (real-codex smoke test) | Catches Codex JSONL schema breaks ~7 days max; auto-files GH issue on fail. Cheap insurance (~30min/week). |
 
@@ -227,4 +236,4 @@ See [implementation plan](../plans/260427-1358-codex-openai-wrapper/plan.md) for
 
 **Status:** v1 INTERNAL ONLY scope locked. Feature-complete (including tool-calling synthesis). Production-ready.
 
-**Last Updated:** 2026-04-29 (tool-calling synthesis + HA EOC verification, metrics updated)
+**Last Updated:** 2026-05-02 (admin UI, daily usage tracking, Grafana dashboards, Phase 07-10 complete)

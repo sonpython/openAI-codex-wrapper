@@ -398,6 +398,54 @@ Default session TTL is **8 hours** (`ADMIN_SESSION_TTL_SECONDS=28800`). Adjust i
 
 ---
 
+## Prometheus & Grafana Operations
+
+### Access Grafana Dashboard
+
+**Local dev (docker-compose):**
+```bash
+open http://localhost:3001
+# Default: admin / admin (CHANGE PASSWORD!)
+```
+
+**Production (via SSH tunnel):**
+```bash
+ssh -L 3001:localhost:3001 root@<VM_IP>
+# Then open http://localhost:3001
+```
+
+**Auto-provisioned dashboards:**
+- **System Overview** — Request rate, error rate, latency percentiles, queue depth, active jobs
+- **API Endpoints** — Per-route metrics, top endpoints, status codes
+- **Codex CLI** — Event types, subprocess duration, event taxonomy
+
+### Check Prometheus Targets
+
+Health of metrics collection. Verify scrape targets are healthy:
+
+```bash
+# Via SSH tunnel or local (if exposed):
+curl -s http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | {job, endpoint, health}'
+
+# Expected output shows `gateway:8000/_internal/metrics` with health="up"
+```
+
+### Reload Prometheus Config (if modified)
+
+If you edit `prometheus.yml` and want to apply changes without restart:
+
+```bash
+curl -X POST http://localhost:9090/-/reload
+```
+
+### Storage & Retention
+
+- **Default retention:** 15 days (configurable via `docker-compose.yml` `--storage.tsdb.retention.time`)
+- **Disk usage:** Monitor `prometheus_data` volume size
+- **Backup:** Included in daily `pg_dump` backup job (though Prometheus is ephemeral; rebuild from metrics)
+
+---
+
 ## Common Error Codes
 
 | Code | Symptom | Cause | First Action |
