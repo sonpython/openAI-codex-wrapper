@@ -35,17 +35,17 @@ Postgres data and Redis AOF are stored on named Docker volumes (default: `/var/l
 | Slack Workspace | Alert notifications | Recommended |
 | PagerDuty | On-call paging | Optional |
 | ChatGPT account | codex CLI auth | **Yes — one account per worker** |
-| DNS A record | `codex.internal` → VM IP | Yes (internal DNS or /etc/hosts) |
+| Cloudflare account + domain | Public ingress via Tunnel | Yes (e.g. `openai.sonpython.com`) |
 
 ### Ports (UFW rules)
 
+Cloudflare Tunnel (cloudflared) makes outbound-only connections to Cloudflare
+edge — **no inbound ports required for public ingress**. The host can run
+fully behind NAT / firewall.
+
 | Port | Protocol | Direction | Purpose |
 |---|---|---|---|
-| 22 | TCP | Inbound | SSH admin access |
-| 80 | TCP | Inbound | Caddy HTTP→HTTPS redirect |
-| 443 | TCP | Inbound | Caddy HTTPS (API + admin UI) |
-| 3001 | TCP | Inbound (via tunnel) | Grafana dashboards (local dev: :3001) |
-| 9090 | TCP | Inbound (via tunnel) | Prometheus (local dev: :9090) |
+| 22 | TCP | Inbound | SSH admin access (Grafana / Prometheus reached via SSH tunnel) |
 | All others | — | Inbound | DENY |
 
 ---
@@ -73,6 +73,7 @@ $EDITOR .env
 | `PROMETHEUS_URL` | Prometheus URL for admin UI queries | `http://prometheus:9090` |
 | `GHCR_ORG` | GitHub org/user for image pulls | `your-org` |
 | `IMAGE_TAG` | Image tag to deploy | `v0.1.0` |
+| `CLOUDFLARED_TUNNEL_TOKEN` | Cloudflare Tunnel connector token | `eyJh...` (CF Zero Trust dashboard) |
 
 ### Optional production variables
 
@@ -82,7 +83,6 @@ $EDITOR .env
 | `PAGERDUTY_KEY` | (empty) | PagerDuty routing key; disables PD if unset |
 | `AWS_DEFAULT_REGION` | `us-east-1` | S3 region |
 | `OTEL_SAMPLER_RATIO` | `0.1` | Trace sampling (1.0 = 100%) |
-| `ACCESS_GATE_KIND` | `caddy-ip` | Documents chosen access gate (informational) |
 
 ### Security Notes
 
@@ -92,36 +92,63 @@ $EDITOR .env
 
 ---
 
-## DNS / Access Gate Setup
+## Public Ingress: Cloudflare Tunnel
 
-### Option A — Caddy IP Allowlist (default)
+Production deploys publish the API + admin UI through a **Cloudflare Tunnel**
+(`cloudflared`). Cloudflare terminates TLS at the edge and routes the public
+hostname to the gateway over an outbound-only tunnel — no inbound ports, no
+ACME, no Let's Encrypt cert management.
 
-1. Add an internal DNS A record: `codex.internal` → `<VM_IP>`
-   - Or add to `/etc/hosts` on all client machines.
-2. Edit `infra/Caddyfile.production` — replace `codex.internal` with your FQDN.
-3. Adjust `@allowed` CIDR ranges to match your VPN/LAN subnets.
+### One-time Cloudflare setup
 
-### Option B — Tailscale
+1. Add the domain (e.g. `sonpython.com`) to your Cloudflare account.
+2. Cloudflare dashboard → **Zero Trust** → **Networks** → **Tunnels**
+   → **Create a tunnel**.
+3. Choose connector type **Cloudflared**, name the tunnel
+   (e.g. `codex-wrapper-prod`), then click **Save tunnel**.
+4. CF shows install snippets — copy the **token** (long JWT starting `eyJh...`).
+   This is the value of `CLOUDFLARED_TUNNEL_TOKEN`.
+5. Skip the install step in CF dashboard (compose runs cloudflared for you).
+6. Open the tunnel's **Public Hostname** tab → **Add a public hostname**:
+   - Subdomain: `openai`
+   - Domain: `sonpython.com`
+   - Path: (empty)
+   - Service Type: **HTTP**
+   - URL: `gateway:8000`
+   - Save.
+7. The hostname is live in ≤30 s after tunnel connects from the host.
 
-1. Install Tailscale on the VM and all client devices.
-2. Use the Tailscale MagicDNS hostname in `Caddyfile.production`.
-3. Set UFW to allow only from `tailscale0` interface.
+### Recommended: gate `/admin/*` behind Cloudflare Access
 
-See `infra/access-gate/README.md` for full option comparison.
+The admin UI accepts an `ADMIN_TOKEN` cookie, but exposing it openly invites
+brute-force attempts. Add a Cloudflare Access policy:
+
+- Zero Trust → **Access** → **Applications** → Add → **Self-hosted**
+- Application name: `codex-wrapper admin`
+- Subdomain: `openai`, Domain: `sonpython.com`, Path: `/admin*`
+- Add policy: e.g. allow login via Google/GitHub for your email only.
+
+Now `/admin/*` requires CF Access auth before reaching the gateway, in
+addition to the existing token cookie.
+
+### Internal-only services (Grafana, Prometheus, Postgres, Redis)
+
+These are **not** exposed via Cloudflared and have no host ports. Reach them
+via SSH tunnel from your laptop:
+
+```bash
+ssh -L 3000:grafana:3000 -L 9090:prometheus:9090 ops@<host>
+# Then open http://localhost:3000 (Grafana) and http://localhost:9090 (Prom).
+```
 
 ---
 
-## TLS Certificate Provisioning
+## TLS
 
-Caddy handles TLS automatically:
-
-- **Public ACME domain** (domain has public DNS): Caddy requests Let's Encrypt cert via HTTP-01 challenge on port 80. No manual steps needed.
-- **Truly internal domain** (`*.internal`, no public DNS): Configure `step-ca` as internal ACME CA:
-  1. Install `step-ca` on the VM or a separate host.
-  2. Set `acme_ca` in `Caddyfile.production` to `step-ca` directory URL.
-  3. Distribute the root CA cert to all client browsers/machines.
-
-Cert storage: persisted in the `caddy_data` Docker volume (survives restarts).
+Cloudflare terminates TLS at the edge with its managed certificate for
+`*.sonpython.com` (free with any CF plan). Origin (gateway) speaks plain HTTP
+on the Docker network — only `cloudflared` reaches it. No ACME, no certs to
+rotate on the host.
 
 ---
 

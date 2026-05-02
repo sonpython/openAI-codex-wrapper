@@ -1,7 +1,7 @@
 # Operations Runbook — codex-wrapper
 
 **Audience:** On-call engineers with SSH access to the production VM.
-**Stack:** Single-VM Docker Compose, Ubuntu 24.04, Caddy, Postgres 16, Redis 7, Loki/Tempo/Prometheus.
+**Stack:** Single-VM Docker Compose, Ubuntu 24.04, Cloudflare Tunnel (cloudflared), Postgres 16, Redis 7, Loki/Tempo/Prometheus, Grafana.
 **Install dir:** `/opt/codex-wrapper`
 
 ---
@@ -351,7 +351,7 @@ git tag v0.x.y-prev-redeploy && git push --tags
 
 ### Login
 
-The admin web UI is available at `http://localhost:8000/admin/ui` (dev) or `https://wrapper.internal/admin/ui` (prod via Caddy).
+The admin web UI is available at `http://localhost:8000/admin/ui` (dev) or `https://<your-tunnel-host>/admin/ui` (prod via Cloudflare Tunnel, e.g. `https://openai.sonpython.com/admin/ui`).
 
 1. Open the login URL in a browser.
 2. Enter the `ADMIN_TOKEN` value from `.env`.
@@ -395,6 +395,54 @@ rm .env.bak
 ### Session TTL
 
 Default session TTL is **8 hours** (`ADMIN_SESSION_TTL_SECONDS=28800`). Adjust in `.env` and restart gateway. Sessions are stored in Redis; a Redis flush also invalidates all sessions.
+
+---
+
+## Cloudflare Tunnel Operations
+
+### Tunnel status
+
+```bash
+# Connector logs (last 50 lines)
+docker compose logs --tail 50 cloudflared
+
+# Look for: "Registered tunnel connection" + "Updated to new configuration"
+```
+
+### Verify public hostname is reachable
+
+```bash
+# Should return 401 (no bearer) or 200 — anything but a connection error proves
+# Cloudflare → tunnel → gateway path is working.
+curl -I https://openai.sonpython.com/healthz
+```
+
+### Reload ingress rules
+
+Public hostname routing is configured in **Cloudflare Zero Trust dashboard**
+→ Tunnels → (your tunnel) → Public Hostname tab. Changes propagate to the
+connector in ~30 s; no host-side restart needed.
+
+### Rotate tunnel token
+
+1. Zero Trust → Networks → Tunnels → (your tunnel) → **Refresh token**.
+2. Copy the new token, update `CLOUDFLARED_TUNNEL_TOKEN` in `.env`.
+3. `docker compose -f docker-compose.yml -f docker-compose.production.yml up -d cloudflared`.
+
+### Bypass tunnel for incident debugging
+
+If the tunnel goes down and the public host is unreachable, expose the
+gateway port on the host temporarily:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d \
+  --scale cloudflared=0
+docker run -d --network codex-wrapper_default --name gw-tmp \
+  -p 8000:8000 --link gateway alpine/socat \
+  TCP-LISTEN:8000,fork,reuseaddr TCP:gateway:8000
+```
+
+Restore by deleting the socat container and `docker compose up -d cloudflared`.
 
 ---
 
