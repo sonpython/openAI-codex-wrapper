@@ -91,9 +91,13 @@ services:
     image: prom/alertmanager:v0.27.0
     restart: unless-stopped
     logging: *default-logging
+    # Opt-in profile — needs SLACK_WEBHOOK_URL / PAGERDUTY_KEY set + config.expand-env.
+    # Enable with `docker compose --profile alerts up -d alertmanager` after wiring envs.
+    profiles: ["alerts"]
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
       - "--storage.path=/alertmanager"
+      - "--config.expand-env=true"
     volumes:
       - ./infra/alerting/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
