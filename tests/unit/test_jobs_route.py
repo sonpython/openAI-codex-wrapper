@@ -34,8 +34,11 @@ from src.gateway.routes.jobs import router as jobs_router
 # ── App factory ───────────────────────────────────────────────────────────────
 
 
-def _make_app(user_id: uuid.UUID | None = None) -> FastAPI:
-    """Build minimal test app with jobs router; injects user_id into state."""
+def _make_app(
+    user_id: uuid.UUID | None = None,
+    codex_mode: str | None = None,
+) -> FastAPI:
+    """Build minimal test app with jobs router; injects user_id and optional codex_mode into state."""
     app = FastAPI()
 
     @app.exception_handler(RequestValidationError)
@@ -59,6 +62,8 @@ def _make_app(user_id: uuid.UUID | None = None) -> FastAPI:
     async def _inject_user(request: Any, call_next: Any) -> Any:
         if user_id is not None:
             request.state.user_id = user_id
+        if codex_mode is not None:
+            request.state.codex_mode = codex_mode
         return await call_next(request)
 
     app.include_router(jobs_router)
@@ -531,6 +536,197 @@ def test_post_job_400_branch_double_slash() -> None:
         },
     )
     assert resp.status_code == 400
+
+
+# ── Phase-2: local-bridge 501 ─────────────────────────────────────────────────
+
+
+def test_post_job_501_local_bridge_mode() -> None:
+    """Phase-2: local-bridge api_key mode → 501 without touching DB, Redis, or Arq."""
+    uid = uuid.uuid4()
+    app = _make_app(uid, codex_mode="local-bridge")
+    client = TestClient(app, raise_server_exceptions=True)
+    resp = client.post(
+        "/v1/codex/jobs",
+        json={"repo_url": "https://github.com/openai/codex", "task": "fix the bug"},
+    )
+    assert resp.status_code == 501
+    body = resp.json()
+    assert body["error"]["code"] == "local_bridge_not_implemented"
+    assert body["error"]["type"] == "api_error"
+
+
+# ── HIGH-2: body.mode authz gating ───────────────────────────────────────────
+
+
+def test_post_job_403_sandbox_key_workspace_write_body() -> None:
+    """HIGH-2: sandbox api key + workspace-write body → 403 forbidden_for_key_mode."""
+    uid = uuid.uuid4()
+    app = _make_app(uid, codex_mode="sandbox")
+    client = TestClient(app, raise_server_exceptions=True)
+    resp = client.post(
+        "/v1/codex/jobs",
+        json={
+            "repo_url": "https://github.com/openai/codex",
+            "task": "do something",
+            "mode": "workspace-write",
+        },
+    )
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body["error"]["code"] == "forbidden_for_key_mode"
+    assert body["error"]["type"] == "forbidden"
+    assert body["error"]["param"] == "mode"
+
+
+def test_post_job_202_sandbox_key_read_only_body() -> None:
+    """HIGH-2: sandbox api key + read-only body → 202 (allowed)."""
+    uid = uuid.uuid4()
+    job_id = uuid.uuid4()
+    fake_job = _fake_job(job_id, uid)
+
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    async def _fake_create(*args: Any, **kwargs: Any) -> Any:
+        return fake_job
+
+    with (
+        patch("src.gateway.routes.jobs.jobs_crud.create_job", side_effect=_fake_create),
+        patch("src.gateway.routes.jobs.main_session", return_value=mock_session),
+        patch("src.gateway.routes.jobs._get_arq_pool", new=AsyncMock(return_value=mock_pool)),
+        patch("src.gateway.routes.jobs.get_client", return_value=AsyncMock()),
+        patch("src.gateway.routes.jobs._publish_queued", new=AsyncMock()),
+    ):
+        app = _make_app(uid, codex_mode="sandbox")
+        client = TestClient(app, raise_server_exceptions=True)
+        resp = client.post(
+            "/v1/codex/jobs",
+            json={
+                "repo_url": "https://github.com/openai/codex",
+                "task": "fix the bug",
+                "mode": "read-only",
+            },
+        )
+
+    assert resp.status_code == 202
+
+
+def test_post_job_202_vps_key_workspace_write_body() -> None:
+    """HIGH-2: vps api key + workspace-write body → 202 (allowed)."""
+    uid = uuid.uuid4()
+    job_id = uuid.uuid4()
+    fake_job = _fake_job(job_id, uid)
+
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    async def _fake_create(*args: Any, **kwargs: Any) -> Any:
+        return fake_job
+
+    with (
+        patch("src.gateway.routes.jobs.jobs_crud.create_job", side_effect=_fake_create),
+        patch("src.gateway.routes.jobs.main_session", return_value=mock_session),
+        patch("src.gateway.routes.jobs._get_arq_pool", new=AsyncMock(return_value=mock_pool)),
+        patch("src.gateway.routes.jobs.get_client", return_value=AsyncMock()),
+        patch("src.gateway.routes.jobs._publish_queued", new=AsyncMock()),
+    ):
+        app = _make_app(uid, codex_mode="vps")
+        client = TestClient(app, raise_server_exceptions=True)
+        resp = client.post(
+            "/v1/codex/jobs",
+            json={
+                "repo_url": "https://github.com/openai/codex",
+                "task": "fix the bug",
+                "mode": "workspace-write",
+            },
+        )
+
+    assert resp.status_code == 202
+
+
+def test_post_job_202_vps_key_read_only_body() -> None:
+    """HIGH-2: vps api key + read-only body → 202 (allowed)."""
+    uid = uuid.uuid4()
+    job_id = uuid.uuid4()
+    fake_job = _fake_job(job_id, uid)
+
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    async def _fake_create(*args: Any, **kwargs: Any) -> Any:
+        return fake_job
+
+    with (
+        patch("src.gateway.routes.jobs.jobs_crud.create_job", side_effect=_fake_create),
+        patch("src.gateway.routes.jobs.main_session", return_value=mock_session),
+        patch("src.gateway.routes.jobs._get_arq_pool", new=AsyncMock(return_value=mock_pool)),
+        patch("src.gateway.routes.jobs.get_client", return_value=AsyncMock()),
+        patch("src.gateway.routes.jobs._publish_queued", new=AsyncMock()),
+    ):
+        app = _make_app(uid, codex_mode="vps")
+        client = TestClient(app, raise_server_exceptions=True)
+        resp = client.post(
+            "/v1/codex/jobs",
+            json={
+                "repo_url": "https://github.com/openai/codex",
+                "task": "fix the bug",
+                "mode": "read-only",
+            },
+        )
+
+    assert resp.status_code == 202
+
+
+# ── MEDIUM-3: unknown mode → 501 unsupported_mode ────────────────────────────
+
+
+def test_post_job_501_unknown_mode() -> None:
+    """MEDIUM-3: unknown codex_mode in request.state → 501 unsupported_mode."""
+    uid = uuid.uuid4()
+    app = _make_app(uid, codex_mode="future-unknown-mode")
+    client = TestClient(app, raise_server_exceptions=True)
+    resp = client.post(
+        "/v1/codex/jobs",
+        json={"repo_url": "https://github.com/openai/codex", "task": "t"},
+    )
+    assert resp.status_code == 501
+    body = resp.json()
+    assert body["error"]["code"] == "unsupported_mode"
+    assert body["error"]["type"] == "not_implemented"
+    # MEDIUM-4: param key must be present (null value acceptable)
+    assert "param" in body["error"]
+    assert body["error"]["param"] is None
+
+
+# ── MEDIUM-4: local-bridge 501 envelope has param: null ──────────────────────
+
+
+def test_post_job_501_local_bridge_has_param_null() -> None:
+    """MEDIUM-4: local-bridge 501 body must include param: null."""
+    uid = uuid.uuid4()
+    app = _make_app(uid, codex_mode="local-bridge")
+    client = TestClient(app, raise_server_exceptions=True)
+    resp = client.post(
+        "/v1/codex/jobs",
+        json={"repo_url": "https://github.com/openai/codex", "task": "fix the bug"},
+    )
+    assert resp.status_code == 501
+    body = resp.json()
+    assert "param" in body["error"]
+    assert body["error"]["param"] is None
 
 
 def test_post_job_200_valid_branch() -> None:

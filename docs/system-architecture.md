@@ -312,6 +312,61 @@ Prevents: network, system calls, file access outside workspace.
 
 ---
 
+## Per-API-Key Execution Modes
+
+Each API key carries a `mode` column (`api_keys.mode`) that controls which codex `--sandbox` policy is applied. Auth middleware reads this and stashes it as `request.state.codex_mode`; route handlers map it to the codex flag before spawning the runner.
+
+### Mode → behavior mapping
+
+| `api_keys.mode` | codex `--sandbox` flag | Isolation boundary | Notes |
+|---|---|---|---|
+| `sandbox` (default) | `read-only` | codex internal (Landlock/seccomp/Seatbelt) | Bit-identical to pre-Phase-2 behavior |
+| `vps` | `danger-full-access` | Docker container only | Codex can write anywhere in container FS; use only on trusted, personal VMs |
+| `local-bridge` | (n/a) | (n/a) | Route returns HTTP 501 immediately; runner is never spawned |
+
+### Data flow
+
+```
+HTTP request
+  └─ AuthMiddleware
+      └─ request.state.codex_mode = api_key.mode
+          └─ route handler (chat_completions / responses / jobs)
+              ├─ if local-bridge → return 501 (no workspace created)
+              └─ else → sandbox_flag = resolve_sandbox_flag(api_key.mode)
+                  └─ run_codex(sandbox_mode=sandbox_flag, ...)
+                      └─ argv += ["--sandbox", sandbox_flag]
+```
+
+### Mapping helper
+
+`resolve_sandbox_flag(api_key_mode: str) -> str` lives in `src/codex/runner.py`.
+Returns the codex `--sandbox` value or raises `ValueError` for unmapped modes (defense-in-depth; routes pre-check).
+
+### Job body.mode authz (POST /v1/codex/jobs)
+
+The jobs route enforces a relationship between the caller's `api_keys.mode` and the `mode` field in the request body:
+
+| `api_keys.mode` (`request.state.codex_mode`) | Allowed `body.mode` values | Outcome if disallowed |
+|---|---|---|
+| `sandbox` | `read-only` only | 403 `forbidden_for_key_mode` |
+| `vps` | `read-only`, `workspace-write` | — |
+| `local-bridge` | (none) | 501 `local_bridge_not_implemented` |
+
+This prevents a sandbox-tier key from submitting `workspace-write` async jobs that would bypass the codex internal sandbox layer at job execution time.
+
+### Forward-compat: unknown modes
+
+All three routes (`chat_completions`, `responses`, `jobs`) guard `resolve_sandbox_flag()` calls. If the DB ever holds an unrecognized mode value (e.g. a future mode deployed to DB before gateway code rolls), the route returns:
+
+```json
+{"error": {"type": "not_implemented", "code": "unsupported_mode", "param": null,
+           "message": "execution mode '<X>' is not supported by this gateway version"}}
+```
+
+HTTP 501. The runner's `ValueError` remains as defense-in-depth.
+
+---
+
 ## Observability: Logs + Metrics + Traces
 
 ### Structured Logging (structlog → Loki)

@@ -15,6 +15,7 @@ to prevent Caddy/CDN/AWS-ALB idle-timeout kills.
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator
 from uuid import uuid4
 
@@ -23,12 +24,13 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
+from src.chat.error_chunk import synth_error_chunk
 from src.chat.prompt_builder import build_prompt
 from src.chat.stream_handler import stream_chunks
 from src.chat.sync_handler import handle_sync
 from src.chat.tool_calling import format_tools_prompt
 from src.chat.usage_estimator import _count_tokens
-from src.codex.runner import run_codex
+from src.codex.runner import resolve_sandbox_flag, run_codex
 from src.codex.workspace import cleanup_workspace, make_workspace
 from src.gateway.schemas.chat_request import ChatCompletionRequest
 from src.gateway.sse_helpers import keepalive_wrap
@@ -87,6 +89,28 @@ async def chat_completions(
     except ValueError as exc:
         return _openai_error(400, str(exc), code="context_length_exceeded")
 
+    # Mode dispatch: read execution mode set by AuthMiddleware (default "sandbox").
+    # local-bridge mode is not yet implemented — short-circuit with 501 before
+    # any workspace is created or runner is spawned.
+    api_mode: str = getattr(request.state, "codex_mode", "sandbox")
+    if api_mode == "local-bridge":
+        return _openai_error(
+            501,
+            "local-bridge mode is not yet implemented; use sandbox or vps.",
+            error_type="api_error",
+            code="local_bridge_not_implemented",
+        )
+    # MEDIUM-3: catch unknown future modes before spawning any workspace/runner.
+    try:
+        sandbox_flag = resolve_sandbox_flag(api_mode)
+    except ValueError:
+        return _openai_error(
+            501,
+            f"execution mode {api_mode!r} is not supported by this gateway version",
+            error_type="not_implemented",
+            code="unsupported_mode",
+        )
+
     job_id = str(uuid4())
 
     # Workspace creation — raises CodexRunnerError if root missing.
@@ -125,13 +149,17 @@ async def chat_completions(
         # completion tokens are derived from the SSE output bytes (rough).
         runner = run_codex(
             prompt,
-            allow_write=False,
+            sandbox_mode=sandbox_flag,
             workspace_dir=ws,
             timeout=timeout,
             request_id=job_id,
         )
         raw_stream = stream_chunks(req, prompt, runner)
         kept = keepalive_wrap(raw_stream, interval=15.0)
+        # Capture created/cid for the synthetic error chunk — must be stable
+        # across the lifetime of the generator (closed over below).
+        _created = int(time.time())
+        _cid = f"chatcmpl_{job_id}"
 
         async def _stream_with_usage_capture() -> AsyncIterator[bytes]:
             """Exhaust `kept` and write usage to request.state after stream ends.
@@ -140,21 +168,40 @@ async def chat_completions(
             completion tokens.  This is an approximation — the canonical
             token count comes from the tiktoken counter inside stream_chunks —
             but it is sufficient for TPM true-up purposes.
+
+            Phase-3 fix: on any exception from the upstream iterator, emit a
+            synthetic terminal chunk (finish_reason='error') + '[DONE]' so that
+            aiohttp clients receive a clean chunked-transfer EOF instead of
+            raising TransferEncodingError 400.  We do NOT re-raise — Starlette
+            must see a clean generator return to close the body correctly.
             """
             completion_bytes = 0
-            async for chunk in kept:
-                # Count non-keepalive SSE payload bytes as a proxy for tokens.
-                if chunk.startswith(b"data: ") and not chunk.startswith(b"data: [DONE]"):
-                    completion_bytes += len(chunk)
-                yield chunk
-            # Estimate from prompt + completion output bytes.
-            prompt_tokens = _count_tokens(prompt)
-            completion_tokens = max(1, completion_bytes // 4)
-            request.state.usage = {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
-            }
+            sent_done = False
+            try:
+                async for chunk in kept:
+                    # Count non-keepalive SSE payload bytes as a proxy for tokens.
+                    if chunk.startswith(b"data: ") and not chunk.startswith(b"data: [DONE]"):
+                        completion_bytes += len(chunk)
+                    if chunk.startswith(b"data: [DONE]"):
+                        sent_done = True
+                    yield chunk
+            except Exception:
+                logger.exception("chat.stream.wrapper_failed", job_id=job_id)
+                if not sent_done:
+                    # Flush synthetic terminal frame so chunked body closes cleanly.
+                    yield synth_error_chunk(req.model, _cid, _created)
+                    yield b"data: [DONE]\n\n"
+                    sent_done = True
+                # Do NOT re-raise — let StreamingResponse close cleanly.
+            finally:
+                # Estimate from prompt + completion output bytes.
+                prompt_tokens = _count_tokens(prompt)
+                completion_tokens = max(1, completion_bytes // 4)
+                request.state.usage = {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                }
 
         return StreamingResponse(
             _stream_with_usage_capture(),
@@ -167,7 +214,7 @@ async def chat_completions(
     try:
         runner = run_codex(
             prompt,
-            allow_write=False,
+            sandbox_mode=sandbox_flag,
             workspace_dir=ws,
             timeout=timeout,
             request_id=job_id,

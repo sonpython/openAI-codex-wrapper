@@ -131,14 +131,17 @@ async def run_codex_job(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
         summary_parts: list[str] = []
         stderr_buf: list[str] = []
         exit_code: int | None = 0
-        allow_write = mode == "workspace-write"
+        # job.mode uses the job-level enum ("read-only" | "workspace-write"),
+        # which is independent of api_keys.mode ("sandbox" | "vps" | "local-bridge").
+        # Map directly to the codex --sandbox flag without going through api_keys.mode.
+        sandbox_mode = "workspace-write" if mode == "workspace-write" else "read-only"
         total_input_tokens: int = 0
         total_output_tokens: int = 0
 
         async with asyncio.timeout(timeout):
             async for evt in run_codex(
                 task,
-                allow_write=allow_write,
+                sandbox_mode=sandbox_mode,
                 workspace_dir=repo_dir,
                 timeout=float(timeout),
                 request_id=job_id,

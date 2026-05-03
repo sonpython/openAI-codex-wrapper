@@ -133,6 +133,9 @@ class AuthMiddleware:
         request.state.api_key_id = api_key.id
         request.state.user_id = api_key.user_id
         request.state.tier = api_key.tier
+        # Execution mode from api_keys.mode — used by route handlers to select
+        # the codex --sandbox policy (or return 501 for local-bridge).
+        request.state.codex_mode = api_key.mode
 
         # Best-effort timestamp update — never blocks request path (C8).
         update_last_used_fire_and_forget(api_key.id)

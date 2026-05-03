@@ -16,11 +16,18 @@ Caller responsibilities:
   - ``make_workspace`` / ``cleanup_workspace`` (runner never owns the dir).
   - Wrap ``run_codex`` in ``asyncio.timeout`` or pass ``timeout`` arg.
   - Catch ``WorkspaceTraversalError`` before calling run_codex.
+  - Pre-check ``api_key.mode != "local-bridge"`` before calling run_codex;
+    passing "local-bridge" raises ValueError (defense-in-depth only).
 
 Subprocess safety:
   - ``start_new_session=True`` so SIGTERM hits child + all descendants.
   - Args passed as a list; never shell=True.
   - stderr capped at 64 KiB ring buffer; no unbounded accumulation.
+
+Sandbox mode mapping (api_keys.mode → codex --sandbox flag):
+  - "sandbox"      → "read-only"          (default; codex's internal sandbox)
+  - "vps"          → "danger-full-access"  (container is isolation boundary)
+  - "local-bridge" → ValueError raised     (never reaches runner; route returns 501)
 """
 
 from __future__ import annotations
@@ -48,6 +55,37 @@ logger = structlog.get_logger(__name__)
 
 _STDERR_CAP = 64 * 1024  # 64 KiB ring buffer cap
 _STDERR_TAIL = 4 * 1024  # last 4 KiB included in synthesised ErrorEvent
+
+# Mapping from api_keys.mode to codex --sandbox flag value.
+# "local-bridge" is intentionally absent — route layer returns 501 before reaching runner.
+_API_MODE_TO_CODEX_SANDBOX: dict[str, str] = {
+    "sandbox": "read-only",
+    "vps": "danger-full-access",
+}
+
+# Valid codex --sandbox flag values accepted by run_codex directly.
+_VALID_SANDBOX_MODES: frozenset[str] = frozenset(
+    {"read-only", "workspace-write", "danger-full-access"}
+)
+
+
+def resolve_sandbox_flag(api_key_mode: str) -> str:
+    """Map api_keys.mode → codex --sandbox value.
+
+    Args:
+        api_key_mode: Value from api_keys.mode column ("sandbox", "vps", etc.).
+
+    Returns:
+        The codex --sandbox flag value to pass on the CLI.
+
+    Raises:
+        ValueError: If the mode has no mapping (e.g. "local-bridge" — caller
+                    must handle this before reaching the runner).
+    """
+    try:
+        return _API_MODE_TO_CODEX_SANDBOX[api_key_mode]
+    except KeyError as exc:
+        raise ValueError(f"unsupported codex api_key mode: {api_key_mode!r}") from exc
 
 
 async def _drain_stderr(
@@ -96,23 +134,34 @@ async def _terminate(proc: asyncio.subprocess.Process, grace: float, pgid: int) 
 async def run_codex(
     prompt: str,
     *,
-    allow_write: bool,
+    sandbox_mode: str,
     workspace_dir: Path,
     timeout: float,
     model: str | None = None,
     search: bool = False,
     request_id: str | None = None,
 ) -> AsyncIterator[CodexEvent]:
-    """Spawn ``codex exec --json``; yield typed events; SIGTERM/SIGKILL on cancel/timeout."""
+    """Spawn ``codex exec --json``; yield typed events; SIGTERM/SIGKILL on cancel/timeout.
+
+    Args:
+        sandbox_mode: Codex --sandbox flag value. Must be one of
+                      {"read-only", "workspace-write", "danger-full-access"}.
+                      Use ``resolve_sandbox_flag(api_key.mode)`` at the call site
+                      to map from an api_keys.mode value.
+    """
+    if sandbox_mode not in _VALID_SANDBOX_MODES:
+        raise ValueError(
+            f"invalid sandbox_mode {sandbox_mode!r}; "
+            f"must be one of {sorted(_VALID_SANDBOX_MODES)}"
+        )
     settings = get_settings()
-    sandbox = "workspace-write" if allow_write else "read-only"
 
     # C-1 fix: build argv linearly — positional insert shifts tokens and can
     # split argument pairs (e.g. insert(4,…) puts --ephemeral between
     # "--color" and "never"). Append conditional flags explicitly.
     # NOTE: codex 0.125.0 does NOT expose --ask-for-approval (researcher-01 drift).
     # Use --full-auto for non-interactive sandboxed execution; --sandbox below
-    # narrows the policy to read-only or workspace-write per request.
+    # narrows the policy per request (read-only, workspace-write, danger-full-access).
     argv = [
         settings.codex_bin,
         "exec",
@@ -131,7 +180,7 @@ async def run_codex(
     if settings.codex_has_ephemeral:
         argv.append("--ephemeral")
 
-    argv += ["--sandbox", sandbox]
+    argv += ["--sandbox", sandbox_mode]
 
     if model:
         argv += ["-m", model]
@@ -156,7 +205,7 @@ async def run_codex(
     log = logger.bind(
         request_id=request_id,
         workspace=str(workspace_dir),
-        allow_write=allow_write,
+        sandbox_mode=sandbox_mode,
     )
     log.debug("codex.runner.spawning", argv=argv)
 

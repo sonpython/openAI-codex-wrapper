@@ -17,7 +17,7 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.db.crud import jobs as jobs_crud
 from src.db.engine import main_session
@@ -55,12 +55,58 @@ async def _get_arq_pool() -> Any:
 # ── POST /v1/codex/jobs ───────────────────────────────────────────────────────
 
 
-@router.post("/v1/codex/jobs", status_code=202)
+@router.post("/v1/codex/jobs", status_code=202, response_model=None)
 async def create_job(
     request: Request,
     body: JobCreateRequest,
-) -> JobCreatedResponse:
+) -> JobCreatedResponse | JSONResponse:
     """Enqueue a new codex job. Returns 202 with job id immediately."""
+    # Mode dispatch: local-bridge keys cannot spawn codex jobs — return 501 immediately.
+    api_mode: str = getattr(request.state, "codex_mode", "sandbox")
+    if api_mode == "local-bridge":
+        return JSONResponse(
+            status_code=501,
+            content={
+                "error": {
+                    "type": "api_error",
+                    "param": None,
+                    "code": "local_bridge_not_implemented",
+                    "message": "local-bridge mode is not yet implemented; use sandbox or vps.",
+                }
+            },
+        )
+
+    # MEDIUM-3: guard against unknown future modes before reaching the runner.
+    # resolve_sandbox_flag() raises ValueError for unmapped modes; catch it here
+    # and return 501 with the same unsupported_mode envelope used by chat/responses.
+    if api_mode not in ("sandbox", "vps"):
+        return JSONResponse(
+            status_code=501,
+            content={
+                "error": {
+                    "type": "not_implemented",
+                    "param": None,
+                    "code": "unsupported_mode",
+                    "message": f"execution mode {api_mode!r} is not supported by this gateway version",
+                }
+            },
+        )
+
+    # HIGH-2: enforce body.mode authz based on the api key's execution mode.
+    # sandbox keys may only submit read-only jobs; vps keys may choose per-job.
+    if api_mode == "sandbox" and body.mode == "workspace-write":
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": {
+                    "type": "forbidden",
+                    "param": "mode",
+                    "code": "forbidden_for_key_mode",
+                    "message": ("this api key is in sandbox mode; only read-only jobs are allowed"),
+                }
+            },
+        )
+
     user_id = _require_user_id(request)
     api_key_id: uuid.UUID | None = getattr(request.state, "api_key_id", None)
     settings = get_settings()

@@ -42,7 +42,7 @@ async def test_runner_smoke_pong() -> None:
         events = []
         async for evt in run_codex(
             "Reply with the single word: pong",
-            allow_write=False,
+            sandbox_mode="read-only",
             workspace_dir=ws,
             timeout=float(settings.job_timeout_seconds),
         ):

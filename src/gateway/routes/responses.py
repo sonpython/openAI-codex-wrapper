@@ -21,10 +21,11 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
 from src.chat.usage_estimator import _count_tokens
-from src.codex.runner import run_codex
+from src.codex.runner import resolve_sandbox_flag, run_codex
 from src.codex.workspace import cleanup_workspace, make_workspace
 from src.gateway.schemas.responses_request import ResponsesRequest
 from src.gateway.sse_helpers import keepalive_wrap
+from src.responses.error_event import synth_failed_event
 from src.responses.events_emitter import ResponseEmitter
 from src.responses.responses_helpers import build_responses_prompt
 from src.responses.stream_handler import stream_responses
@@ -87,6 +88,28 @@ async def create_response(
     except ValueError as exc:
         return _openai_error(400, str(exc), code="context_length_exceeded")
 
+    # Mode dispatch: read execution mode set by AuthMiddleware (default "sandbox").
+    # local-bridge mode is not yet implemented — short-circuit with 501 before
+    # any workspace is created or runner is spawned.
+    api_mode: str = getattr(request.state, "codex_mode", "sandbox")
+    if api_mode == "local-bridge":
+        return _openai_error(
+            501,
+            "local-bridge mode is not yet implemented; use sandbox or vps.",
+            error_type="api_error",
+            code="local_bridge_not_implemented",
+        )
+    # MEDIUM-3: catch unknown future modes before spawning any workspace/runner.
+    try:
+        sandbox_flag = resolve_sandbox_flag(api_mode)
+    except ValueError:
+        return _openai_error(
+            501,
+            f"execution mode {api_mode!r} is not supported by this gateway version",
+            error_type="not_implemented",
+            code="unsupported_mode",
+        )
+
     response_id = _make_response_id()
     created_at = _iso_now()
 
@@ -110,7 +133,7 @@ async def create_response(
     if req.stream:
         runner = run_codex(
             prompt,
-            allow_write=False,
+            sandbox_mode=sandbox_flag,
             workspace_dir=ws,
             timeout=timeout,
             model=req.model if req.model != "codex-cli" else None,
@@ -127,19 +150,36 @@ async def create_response(
 
         # C1 fix: capture usage after stream completes so UsageTrackingMiddleware
         # can true-up TPM and increment the monthly counter.
+        #
+        # Phase-3 fix: on any exception from the upstream iterator, emit a
+        # synthetic response.failed event so aiohttp clients receive a clean
+        # chunked-transfer EOF instead of raising TransferEncodingError 400.
+        # Do NOT re-raise — Starlette must see a clean generator return.
         async def _stream_with_usage_capture() -> AsyncIterator[bytes]:
             completion_bytes = 0
-            async for chunk in kept:
-                if not chunk.startswith(b": keepalive"):
-                    completion_bytes += len(chunk)
-                yield chunk
-            prompt_tokens = _count_tokens(prompt)
-            completion_tokens = max(1, completion_bytes // 4)
-            request.state.usage = {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
-            }
+            sent_terminal = False
+            try:
+                async for chunk in kept:
+                    if not chunk.startswith(b": keepalive"):
+                        completion_bytes += len(chunk)
+                    if chunk.startswith((b"event: response.completed", b"event: response.failed")):
+                        sent_terminal = True
+                    yield chunk
+            except Exception:
+                logger.exception("responses.stream.wrapper_failed", response_id=response_id)
+                if not sent_terminal:
+                    # Flush synthetic terminal event so chunked body closes cleanly.
+                    yield synth_failed_event(response_id)
+                    sent_terminal = True
+                # Do NOT re-raise — let StreamingResponse close cleanly.
+            finally:
+                prompt_tokens = _count_tokens(prompt)
+                completion_tokens = max(1, completion_bytes // 4)
+                request.state.usage = {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                }
 
         return StreamingResponse(
             _stream_with_usage_capture(),
@@ -152,7 +192,7 @@ async def create_response(
     try:
         runner = run_codex(
             prompt,
-            allow_write=False,
+            sandbox_mode=sandbox_flag,
             workspace_dir=ws,
             timeout=timeout,
             model=req.model if req.model != "codex-cli" else None,

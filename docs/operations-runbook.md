@@ -494,6 +494,36 @@ curl -X POST http://localhost:9090/-/reload
 
 ---
 
+## Per-API-Key Execution Modes
+
+### How to change a key's mode
+
+Use the admin UI keys page (`/admin/ui/keys`) to update a key's tier or execution mode.
+
+Valid values: `sandbox` (default), `vps`, `local-bridge`.
+
+### Mode risk summary
+
+| Mode | Risk | Notes |
+|---|---|---|
+| `sandbox` | Low — codex's internal sandbox (Landlock/seccomp) restricts FS + network | Default for all new keys |
+| `vps` | **High** — codex `--sandbox danger-full-access` disables the internal sandbox layer entirely. Codex can read/write **anywhere inside the gateway container's filesystem** (not just the workspace). The Docker container is the only isolation boundary. Use only for personal/trusted VMs. Janitor TTL 1h still applies to workspaces. | Do **not** assign to external/untrusted users |
+| `local-bridge` | No runner spawned — gateway returns HTTP 501 immediately | Placeholder for future WS bridge mode; no execution risk |
+
+### Auditing vps-mode usage
+
+```bash
+# Find all keys currently in vps mode:
+docker compose exec db psql -U postgres -d codex_wrapper \
+  -c "SELECT id, name, user_id, created_at FROM api_keys WHERE mode='vps' AND revoked_at IS NULL;"
+
+# Check audit log for a specific key:
+docker compose exec db psql -U postgres -d codex_wrapper \
+  -c "SELECT * FROM audit_log WHERE api_key_id='<key_id>' ORDER BY created_at DESC LIMIT 20;"
+```
+
+---
+
 ## Common Error Codes
 
 | Code | Symptom | Cause | First Action |
@@ -502,3 +532,4 @@ curl -X POST http://localhost:9090/-/reload
 | `codex_rate_limited` | 429 from gateway with `"source":"codex_cli"` | Account-level 429 from ChatGPT backend | §8 — raise tier or pool accounts |
 | `workspace_disk_full` | Jobs failing with disk error; `WorkspaceDiskFull` alert | Janitor lagging or runaway clone | §6 + `docker compose exec worker find /workspaces -maxdepth 1 -mmin +60 -exec rm -rf {} +` |
 | `redis_connection_lost` | 503 on rate-limited routes; arq jobs not dequeuing | Redis container OOM or crash | `docker compose restart redis` → check `docker compose logs redis` → investigate memory usage |
+| `local_bridge_not_implemented` | 501 on any `/v1/*` route | API key has `mode=local-bridge` | Upgrade key to `sandbox` or `vps` mode via Admin UI |

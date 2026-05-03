@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from src.codex.events import ErrorEvent, ThreadStarted, TurnCompleted
-from src.codex.runner import run_codex
+from src.codex.runner import resolve_sandbox_flag, run_codex
 
 # ── Fake subprocess helpers ───────────────────────────────────────────────────
 
@@ -96,7 +96,7 @@ async def test_argv_base_flags_always_present(tmp_path: Path) -> None:
         patch("src.codex.runner.get_settings", return_value=settings),
         patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
     ):
-        async for _ in run_codex("hello", allow_write=False, workspace_dir=ws, timeout=10.0):
+        async for _ in run_codex("hello", sandbox_mode="read-only", workspace_dir=ws, timeout=10.0):
             pass
 
     assert "codex" in captured_argv
@@ -126,7 +126,7 @@ async def test_argv_color_never_pair_unbroken(tmp_path: Path) -> None:
         patch("src.codex.runner.get_settings", return_value=settings_no_eph),
         patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
     ):
-        async for _ in run_codex("hi", allow_write=False, workspace_dir=ws, timeout=5.0):
+        async for _ in run_codex("hi", sandbox_mode="read-only", workspace_dir=ws, timeout=5.0):
             pass
 
     color_idx = captured_argv.index("--color")
@@ -141,7 +141,7 @@ async def test_argv_color_never_pair_unbroken(tmp_path: Path) -> None:
         patch("src.codex.runner.get_settings", return_value=settings_eph),
         patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
     ):
-        async for _ in run_codex("hi", allow_write=False, workspace_dir=ws, timeout=5.0):
+        async for _ in run_codex("hi", sandbox_mode="read-only", workspace_dir=ws, timeout=5.0):
             pass
 
     color_idx = captured_argv.index("--color")
@@ -172,7 +172,7 @@ async def test_argv_ephemeral_flag_when_enabled(tmp_path: Path) -> None:
         patch("src.codex.runner.get_settings", return_value=settings),
         patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
     ):
-        async for _ in run_codex("hi", allow_write=False, workspace_dir=ws, timeout=5.0):
+        async for _ in run_codex("hi", sandbox_mode="read-only", workspace_dir=ws, timeout=5.0):
             pass
 
     assert "--ephemeral" in captured_argv
@@ -195,7 +195,7 @@ async def test_subprocess_env_includes_codex_home(tmp_path: Path) -> None:
         patch("src.codex.runner.get_settings", return_value=settings),
         patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
     ):
-        async for _ in run_codex("p", allow_write=False, workspace_dir=ws, timeout=5.0):
+        async for _ in run_codex("p", sandbox_mode="read-only", workspace_dir=ws, timeout=5.0):
             pass
 
     env = captured_kwargs.get("env", {})
@@ -244,7 +244,7 @@ async def test_terminate_uses_stored_pgid(tmp_path: Path) -> None:
             "src.codex.runner.os.getpgid", side_effect=AssertionError("getpgid called after spawn")
         ),
     ):
-        async for _ in run_codex("p", allow_write=False, workspace_dir=ws, timeout=0.05):
+        async for _ in run_codex("p", sandbox_mode="read-only", workspace_dir=ws, timeout=0.05):
             pass
 
     # All killpg calls must use proc.pid (captured pgid), never a re-derived value
@@ -267,7 +267,7 @@ async def test_argv_sandbox_read_only(tmp_path: Path) -> None:
         patch("src.codex.runner.get_settings", return_value=_settings()),
         patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
     ):
-        async for _ in run_codex("p", allow_write=False, workspace_dir=ws, timeout=5.0):
+        async for _ in run_codex("p", sandbox_mode="read-only", workspace_dir=ws, timeout=5.0):
             pass
 
     idx = captured_argv.index("--sandbox")
@@ -288,11 +288,85 @@ async def test_argv_sandbox_workspace_write(tmp_path: Path) -> None:
         patch("src.codex.runner.get_settings", return_value=_settings()),
         patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
     ):
-        async for _ in run_codex("p", allow_write=True, workspace_dir=ws, timeout=5.0):
+        async for _ in run_codex(
+            "p", sandbox_mode="workspace-write", workspace_dir=ws, timeout=5.0
+        ):
             pass
 
     idx = captured_argv.index("--sandbox")
     assert captured_argv[idx + 1] == "workspace-write"
+
+
+@pytest.mark.asyncio
+async def test_argv_sandbox_danger_full_access(tmp_path: Path) -> None:
+    """Phase-2: vps api_key mode → --sandbox danger-full-access in argv."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    captured_argv: list[str] = []
+
+    async def _fake_exec(*argv: str, **kwargs: object) -> MagicMock:
+        captured_argv.extend(argv)
+        return _fake_proc([b'{"type":"turn.completed"}\n'])
+
+    with (
+        patch("src.codex.runner.get_settings", return_value=_settings()),
+        patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
+    ):
+        async for _ in run_codex(
+            "p", sandbox_mode="danger-full-access", workspace_dir=ws, timeout=5.0
+        ):
+            pass
+
+    idx = captured_argv.index("--sandbox")
+    assert captured_argv[idx + 1] == "danger-full-access"
+
+
+@pytest.mark.asyncio
+async def test_argv_invalid_sandbox_mode_raises(tmp_path: Path) -> None:
+    """Phase-2: passing an unsupported sandbox_mode raises ValueError before spawning."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    spawned = False
+
+    async def _fake_exec(*argv: str, **kwargs: object) -> MagicMock:
+        nonlocal spawned
+        spawned = True
+        return _fake_proc([])
+
+    with (
+        patch("src.codex.runner.get_settings", return_value=_settings()),
+        patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
+        pytest.raises(ValueError, match="invalid sandbox_mode"),
+    ):
+        async for _ in run_codex("p", sandbox_mode="local-bridge", workspace_dir=ws, timeout=5.0):
+            pass
+
+    assert not spawned, "subprocess must not be spawned for invalid sandbox_mode"
+
+
+# ── resolve_sandbox_flag unit tests ───────────────────────────────────────────
+
+
+def test_resolve_sandbox_flag_sandbox_mode() -> None:
+    """Phase-2: api_key mode 'sandbox' maps to 'read-only'."""
+    assert resolve_sandbox_flag("sandbox") == "read-only"
+
+
+def test_resolve_sandbox_flag_vps_mode() -> None:
+    """Phase-2: api_key mode 'vps' maps to 'danger-full-access'."""
+    assert resolve_sandbox_flag("vps") == "danger-full-access"
+
+
+def test_resolve_sandbox_flag_local_bridge_raises() -> None:
+    """Phase-2: local-bridge mode raises ValueError (route layer should intercept first)."""
+    with pytest.raises(ValueError, match="unsupported codex api_key mode"):
+        resolve_sandbox_flag("local-bridge")
+
+
+def test_resolve_sandbox_flag_unknown_raises() -> None:
+    """Phase-2: unknown mode raises ValueError."""
+    with pytest.raises(ValueError, match="unsupported codex api_key mode"):
+        resolve_sandbox_flag("turbo-mode")
 
 
 @pytest.mark.asyncio
@@ -310,7 +384,7 @@ async def test_argv_model_flag(tmp_path: Path) -> None:
         patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
     ):
         async for _ in run_codex(
-            "p", allow_write=False, workspace_dir=ws, timeout=5.0, model="gpt-4o"
+            "p", sandbox_mode="read-only", workspace_dir=ws, timeout=5.0, model="gpt-4o"
         ):
             pass
 
@@ -333,7 +407,7 @@ async def test_argv_search_flag(tmp_path: Path) -> None:
         patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
     ):
         async for _ in run_codex(
-            "p", allow_write=False, workspace_dir=ws, timeout=5.0, search=True
+            "p", sandbox_mode="read-only", workspace_dir=ws, timeout=5.0, search=True
         ):
             pass
 
@@ -357,7 +431,8 @@ async def test_events_yielded_in_order(tmp_path: Path) -> None:
         patch("asyncio.create_subprocess_exec", return_value=_fake_proc(stdout_lines)),
     ):
         events = [
-            e async for e in run_codex("p", allow_write=False, workspace_dir=ws, timeout=10.0)
+            e
+            async for e in run_codex("p", sandbox_mode="read-only", workspace_dir=ws, timeout=10.0)
         ]
 
     assert len(events) == 2
@@ -381,7 +456,8 @@ async def test_non_json_lines_skipped(tmp_path: Path) -> None:
         patch("asyncio.create_subprocess_exec", return_value=_fake_proc(stdout_lines)),
     ):
         events = [
-            e async for e in run_codex("p", allow_write=False, workspace_dir=ws, timeout=10.0)
+            e
+            async for e in run_codex("p", sandbox_mode="read-only", workspace_dir=ws, timeout=10.0)
         ]
 
     assert len(events) == 2
@@ -402,7 +478,8 @@ async def test_nonzero_exit_synthesises_error_event(tmp_path: Path) -> None:
         ),
     ):
         events = [
-            e async for e in run_codex("p", allow_write=False, workspace_dir=ws, timeout=10.0)
+            e
+            async for e in run_codex("p", sandbox_mode="read-only", workspace_dir=ws, timeout=10.0)
         ]
 
     assert len(events) == 2
@@ -443,7 +520,8 @@ async def test_timeout_synthesises_timeout_error_event(tmp_path: Path) -> None:
         # safety in case of regression — test_terminate_uses_stored_pgid covers this.
     ):
         events = [
-            e async for e in run_codex("p", allow_write=False, workspace_dir=ws, timeout=0.05)
+            e
+            async for e in run_codex("p", sandbox_mode="read-only", workspace_dir=ws, timeout=0.05)
         ]
 
     assert len(events) == 1
@@ -492,7 +570,7 @@ async def test_cancel_sends_sigterm_then_sigkill(tmp_path: Path) -> None:
         patch("src.codex.runner.os.killpg", side_effect=_killpg),
         # H-2: os.getpgid no longer called; not patched here.
     ):
-        gen = run_codex("p", allow_write=False, workspace_dir=ws, timeout=30.0)
+        gen = run_codex("p", sandbox_mode="read-only", workspace_dir=ws, timeout=30.0)
         # Start iterating then cancel after first poll
         task = asyncio.create_task(_collect(gen))
         await asyncio.sleep(0.01)
