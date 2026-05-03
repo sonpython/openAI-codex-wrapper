@@ -12,7 +12,7 @@
   <h2 class="text-lg font-semibold text-gray-800 mb-1">{{ user.email }}</h2>
   <p class="text-xs text-gray-400 font-mono">{{ user.id }}</p>
   <p class="text-xs text-gray-500 mt-1">
-    Created: {% if user.created_at %}{{ user.created_at.strftime('%Y-%m-%d %H:%M UTC') }}{% else %}—{% endif %}
+    Created: {% if user.created_at %}<time datetime="{{ user.created_at.isoformat() }}" data-fmt="full">{{ user.created_at.strftime('%Y-%m-%d %H:%M') }}</time>{% else %}—{% endif %}
   </p>
 </div>
 
@@ -54,10 +54,10 @@
           {% endif %}
         </td>
         <td class="px-4 py-2 text-xs text-gray-500">
-          {% if k.last_used_at %}{{ k.last_used_at.strftime('%Y-%m-%d') }}{% else %}Never{% endif %}
+          {% if k.last_used_at %}<time datetime="{{ k.last_used_at.isoformat() }}" data-fmt="date">{{ k.last_used_at.strftime('%Y-%m-%d') }}</time>{% else %}Never{% endif %}
         </td>
         <td class="px-4 py-2 text-xs text-gray-500">
-          {% if k.created_at %}{{ k.created_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}
+          {% if k.created_at %}<time datetime="{{ k.created_at.isoformat() }}" data-fmt="date">{{ k.created_at.strftime('%Y-%m-%d') }}</time>{% else %}—{% endif %}
         </td>
       </tr>
       {% endfor %}

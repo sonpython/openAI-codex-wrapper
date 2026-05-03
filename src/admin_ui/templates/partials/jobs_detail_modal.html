@@ -44,7 +44,7 @@
     <div>
       <dt class="text-xs font-medium text-gray-500 uppercase tracking-wide">Enqueued</dt>
       <dd class="mt-1 text-gray-600 text-xs">
-        {% if job.enqueued_at %}{{ job.enqueued_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}{% else %}—{% endif %}
+        {% if job.enqueued_at %}<time datetime="{{ job.enqueued_at.isoformat() }}" data-fmt="seconds">{{ job.enqueued_at.strftime('%Y-%m-%d %H:%M:%S') }}</time>{% else %}—{% endif %}
       </dd>
     </div>
     <div>

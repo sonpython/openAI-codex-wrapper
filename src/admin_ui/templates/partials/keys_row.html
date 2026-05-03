@@ -16,7 +16,7 @@
   </td>
   <td class="px-4 py-3 text-gray-600 text-xs">{{ key.user_email }}</td>
   <td class="px-4 py-3 text-gray-500 text-xs">
-    {% if key.last_used_at %}{{ key.last_used_at.strftime('%Y-%m-%d %H:%M') }}{% else %}Never{% endif %}
+    {% if key.last_used_at %}<time datetime="{{ key.last_used_at.isoformat() }}" data-fmt="full">{{ key.last_used_at.strftime('%Y-%m-%d %H:%M') }}</time>{% else %}Never{% endif %}
   </td>
   <td class="px-4 py-3">
     {% if key.revoked_at %}
@@ -25,7 +25,7 @@
       <span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>
     {% endif %}
   </td>
-  <td class="px-4 py-3 text-gray-500 text-xs">{{ key.created_at.strftime('%Y-%m-%d') }}</td>
+  <td class="px-4 py-3 text-gray-500 text-xs"><time datetime="{{ key.created_at.isoformat() }}" data-fmt="date">{{ key.created_at.strftime('%Y-%m-%d') }}</time></td>
   <td class="px-4 py-3 text-right space-x-2">
     {% if not key.revoked_at %}
       <button

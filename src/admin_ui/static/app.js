@@ -51,4 +51,35 @@
       }, 300);
     }, 4000);
   }
+
+  // ── Local-time hydration ────────────────────────────────────────────────────
+  // Server emits <time datetime="ISO-8601-UTC" data-fmt="full|date|seconds">FALLBACK</time>.
+  // Convert the ISO timestamp to the browser's local timezone so admins see
+  // their own clock without server-side TZ config. Re-runs after every HTMX
+  // swap so freshly-rendered partials are also hydrated.
+  function pad(n) { return String(n).padStart(2, "0"); }
+
+  function hydrateTimes(root) {
+    var scope = root || document;
+    scope.querySelectorAll("time[datetime]").forEach(function (el) {
+      var iso = el.getAttribute("datetime");
+      if (!iso) return;
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return;
+      var fmt = el.getAttribute("data-fmt") || "full";
+      var ymd = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+      if (fmt === "date") {
+        el.textContent = ymd;
+      } else if (fmt === "seconds") {
+        el.textContent = ymd + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+      } else {
+        el.textContent = ymd + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+      }
+      // Tooltip shows the underlying UTC timestamp + browser timezone for clarity.
+      el.title = iso + " (browser tz: " + Intl.DateTimeFormat().resolvedOptions().timeZone + ")";
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", function () { hydrateTimes(); });
+  document.addEventListener("htmx:afterSettle", function (evt) { hydrateTimes(evt.detail.target); });
 })();

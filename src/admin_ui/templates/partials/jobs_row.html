@@ -19,7 +19,7 @@
   </td>
   <td class="px-4 py-3 text-xs text-gray-600">{{ job.model or '—' }}</td>
   <td class="px-4 py-3 text-xs text-gray-500">
-    {% if job.created_at %}{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}{% else %}—{% endif %}
+    {% if job.created_at %}<time datetime="{{ job.created_at.isoformat() }}" data-fmt="full">{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}</time>{% else %}—{% endif %}
   </td>
   <td class="px-4 py-3 text-xs text-gray-500">
     {% if job.duration_ms is not none %}{{ job.duration_ms }}ms{% else %}—{% endif %}
