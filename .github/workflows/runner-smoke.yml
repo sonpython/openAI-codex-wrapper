@@ -1,0 +1,26 @@
+name: Self-Hosted Runner Smoke Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, linux, docker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host info
+        run: |
+          uname -a
+          echo "Runner: ${RUNNER_NAME}"
+          echo "Workdir: ${RUNNER_WORKSPACE}"
+
+      - name: Docker reachable
+        run: |
+          docker --version
+          docker ps --format 'table {{.Names}}\t{{.Status}}' | head -10
+
+      - name: Repo files visible
+        run: |
+          ls -la
+          git log --oneline -3
