@@ -128,7 +128,7 @@ async def list_with_filters(
     to: datetime | None = None,
     limit: int = 50,
     offset: int = 0,
-) -> tuple[list[dict], int]:
+) -> tuple[list[dict[str, Any]], int]:
     """List audit_log rows with optional filters.
 
     Returns (items, total) for pagination.

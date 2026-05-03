@@ -15,6 +15,7 @@ startup hook to recover from a crash mid-execution.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import CursorResult, func, select, update
@@ -190,7 +191,7 @@ async def list_with_filters(
     to: datetime | None = None,
     limit: int = 50,
     offset: int = 0,
-) -> tuple[list[dict], int]:
+) -> tuple[list[dict[str, Any]], int]:
     """List jobs with optional filters, joined with users.email.
 
     Returns (items, total) where items is a list of dicts and total is the

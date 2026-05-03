@@ -212,3 +212,7 @@ from src.db.models_audit_log import AuditLog  # noqa: E402, F401
 # Phase 09: UsageDaily is defined in a separate module to keep this file <200 LOC.
 # Import here so Alembic discovers it via Base.metadata when it imports src.db.models.
 from src.db.models_usage_daily import UsageDaily  # noqa: E402, F401
+
+# Explicit re-exports so `from src.db.models import UsageDaily` type-checks
+# under mypy's --strict (PEP 484 implicit re-export rules).
+__all__ = ["AuditLog", "UsageDaily"]

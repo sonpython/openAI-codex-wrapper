@@ -14,7 +14,7 @@ Routes:
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 import structlog
@@ -40,7 +40,7 @@ _VALID_TIERS = {"free", "pro", "ent", "enterprise"}
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
-def _build_key_dict(k: ApiKey, user_email: str) -> dict:
+def _build_key_dict(k: ApiKey, user_email: str) -> dict[str, Any]:
     return {
         "id": str(k.id),
         "prefix": k.prefix,

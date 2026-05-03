@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import contextlib
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 import structlog
@@ -151,7 +151,7 @@ async def _fetch_jobs(
     to: str | None,
     limit: int,
     offset: int,
-) -> tuple[list[dict], int]:
+) -> tuple[list[dict[str, Any]], int]:
     """Parse filter params and call crud helper. Returns (items, total)."""
     parsed_user_id: UUID | None = None
     if user_id:
