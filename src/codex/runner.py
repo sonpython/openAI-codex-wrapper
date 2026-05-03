@@ -160,15 +160,12 @@ async def run_codex(
     # split argument pairs (e.g. insert(4,…) puts --ephemeral between
     # "--color" and "never"). Append conditional flags explicitly.
     # NOTE: codex 0.125.0 does NOT expose --ask-for-approval (researcher-01 drift).
-    # Use --full-auto for non-interactive sandboxed execution; --sandbox below
-    # narrows the policy per request (read-only, workspace-write, danger-full-access).
     argv = [
         settings.codex_bin,
         "exec",
         "--json",
         "--color",
         "never",
-        "--full-auto",
         "--skip-git-repo-check",
         "--cd",
         str(workspace_dir),
@@ -180,7 +177,19 @@ async def run_codex(
     if settings.codex_has_ephemeral:
         argv.append("--ephemeral")
 
-    argv += ["--sandbox", sandbox_mode]
+    # Sandbox dispatch:
+    #   danger-full-access (vps mode) → bypass codex's sandbox entirely. The
+    #     gateway Docker container is the isolation boundary; codex's vendored
+    #     bwrap requires unprivileged user namespaces which most Docker hosts
+    #     do not allow, so --sandbox danger-full-access still spawns bwrap and
+    #     fails. --dangerously-bypass-approvals-and-sandbox skips bwrap and is
+    #     codex's documented "trust the surrounding container" mode.
+    #   read-only / workspace-write → keep --full-auto + --sandbox so codex
+    #     uses its internal sandbox policy.
+    if sandbox_mode == "danger-full-access":
+        argv.append("--dangerously-bypass-approvals-and-sandbox")
+    else:
+        argv += ["--full-auto", "--sandbox", sandbox_mode]
 
     if model:
         argv += ["-m", model]

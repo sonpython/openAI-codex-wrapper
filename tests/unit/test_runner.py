@@ -299,7 +299,14 @@ async def test_argv_sandbox_workspace_write(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_argv_sandbox_danger_full_access(tmp_path: Path) -> None:
-    """Phase-2: vps api_key mode → --sandbox danger-full-access in argv."""
+    """Phase-2: vps api_key mode → --dangerously-bypass-approvals-and-sandbox.
+
+    danger-full-access bypasses codex's bwrap entirely. Most Docker hosts
+    disallow unprivileged user namespaces, so --sandbox danger-full-access
+    still spawns bwrap and fails. The bypass flag is codex's documented
+    "the surrounding container is the sandbox" mode and is what `vps`
+    api_keys.mode resolves to on the wire.
+    """
     ws = tmp_path / "ws"
     ws.mkdir()
     captured_argv: list[str] = []
@@ -317,8 +324,11 @@ async def test_argv_sandbox_danger_full_access(tmp_path: Path) -> None:
         ):
             pass
 
-    idx = captured_argv.index("--sandbox")
-    assert captured_argv[idx + 1] == "danger-full-access"
+    assert "--dangerously-bypass-approvals-and-sandbox" in captured_argv
+    # And the in-sandbox flags are absent — they're only emitted for
+    # read-only / workspace-write modes.
+    assert "--sandbox" not in captured_argv
+    assert "--full-auto" not in captured_argv
 
 
 @pytest.mark.asyncio
