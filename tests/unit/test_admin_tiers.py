@@ -36,7 +36,13 @@ _ADMIN_TOKEN = "test-admin-secret"
 _WRONG_TOKEN = "bad-token"
 
 
-def _mock_plan(tier: str = "free", rpm: int = 20, tpm: int = 20000, concurrent: int = 2, monthly_tokens: int = 100000) -> MagicMock:
+def _mock_plan(
+    tier: str = "free",
+    rpm: int = 20,
+    tpm: int = 20000,
+    concurrent: int = 2,
+    monthly_tokens: int = 100000,
+) -> MagicMock:
     plan = MagicMock()
     plan.tier = tier
     plan.rpm = rpm
@@ -214,9 +220,7 @@ async def test_update_tier_negative_monthly_quota_returns_422(client: AsyncClien
 
 
 @pytest.mark.asyncio
-async def test_update_tier_free_returns_200(
-    client: AsyncClient, mock_session: MagicMock
-) -> None:
+async def test_update_tier_free_returns_200(client: AsyncClient, mock_session: MagicMock) -> None:
     updated = _mock_plan("free", rpm=30, tpm=30000, concurrent=3, monthly_tokens=200000)
 
     with (
@@ -243,9 +247,7 @@ async def test_update_tier_free_returns_200(
 
 
 @pytest.mark.asyncio
-async def test_update_tier_pro_returns_200(
-    client: AsyncClient, mock_session: MagicMock
-) -> None:
+async def test_update_tier_pro_returns_200(client: AsyncClient, mock_session: MagicMock) -> None:
     updated = _mock_plan("pro", rpm=500, tpm=500000, concurrent=20, monthly_tokens=5000000)
 
     with (
@@ -319,7 +321,9 @@ async def test_update_tier_enterprise_name_accepted(
     client: AsyncClient, mock_session: MagicMock
 ) -> None:
     """'enterprise' is a valid alias alongside 'ent'."""
-    updated = _mock_plan("enterprise", rpm=2000, tpm=2000000, concurrent=50, monthly_tokens=20000000)
+    updated = _mock_plan(
+        "enterprise", rpm=2000, tpm=2000000, concurrent=50, monthly_tokens=20000000
+    )
 
     with (
         patch(

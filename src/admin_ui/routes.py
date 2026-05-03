@@ -64,9 +64,7 @@ async def require_session(
 
     sid: str | None = None
     if admin_session and redis is not None:
-        sid = session_auth.verify_session(
-            admin_session, settings.admin_token.get_secret_value()
-        )
+        sid = session_auth.verify_session(admin_session, settings.admin_token.get_secret_value())
         if sid:
             valid = await session_auth.validate_session(redis, sid)
             if not valid:
@@ -152,9 +150,7 @@ async def get_logout(
     redis = get_client()
 
     if admin_session and redis is not None:
-        sid = session_auth.verify_session(
-            admin_session, settings.admin_token.get_secret_value()
-        )
+        sid = session_auth.verify_session(admin_session, settings.admin_token.get_secret_value())
         if sid:
             await session_auth.delete_session(redis, sid)
 

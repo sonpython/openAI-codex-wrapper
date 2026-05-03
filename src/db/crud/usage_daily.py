@@ -49,20 +49,24 @@ async def upsert(
         input_tokens:  Prompt tokens consumed.
         output_tokens: Completion tokens generated.
     """
-    stmt = pg_insert(UsageDaily).values(
-        user_id=user_id,
-        api_key_id=api_key_id,
-        period=period,
-        requests=requests,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-    ).on_conflict_do_update(
-        index_elements=["user_id", "api_key_id", "period"],
-        set_={
-            "requests": UsageDaily.requests + requests,
-            "input_tokens": UsageDaily.input_tokens + input_tokens,
-            "output_tokens": UsageDaily.output_tokens + output_tokens,
-        },
+    stmt = (
+        pg_insert(UsageDaily)
+        .values(
+            user_id=user_id,
+            api_key_id=api_key_id,
+            period=period,
+            requests=requests,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+        .on_conflict_do_update(
+            index_elements=["user_id", "api_key_id", "period"],
+            set_={
+                "requests": UsageDaily.requests + requests,
+                "input_tokens": UsageDaily.input_tokens + input_tokens,
+                "output_tokens": UsageDaily.output_tokens + output_tokens,
+            },
+        )
     )
     await session.execute(stmt)
     await session.commit()

@@ -96,7 +96,10 @@ async def test_jobs_wrong_token():
 @pytest.mark.anyio
 async def test_jobs_empty_list():
     app, _, items, total = _make_app(mock_items=[], mock_total=0)
-    with patch("src.gateway.routes.admin_jobs.jobs_crud.list_with_filters", new=AsyncMock(return_value=(items, total))):
+    with patch(
+        "src.gateway.routes.admin_jobs.jobs_crud.list_with_filters",
+        new=AsyncMock(return_value=(items, total)),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/admin/jobs", headers={"X-Admin-Token": _TOKEN})
     assert resp.status_code == 200
@@ -111,7 +114,10 @@ async def test_jobs_empty_list():
 async def test_jobs_returns_items():
     job = _make_job_item()
     app, _, _, _ = _make_app()
-    with patch("src.gateway.routes.admin_jobs.jobs_crud.list_with_filters", new=AsyncMock(return_value=([job], 1))):
+    with patch(
+        "src.gateway.routes.admin_jobs.jobs_crud.list_with_filters",
+        new=AsyncMock(return_value=([job], 1)),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/admin/jobs", headers={"X-Admin-Token": _TOKEN})
     assert resp.status_code == 200

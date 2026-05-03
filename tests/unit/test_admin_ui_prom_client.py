@@ -37,10 +37,7 @@ def test_parse_metric_with_labels() -> None:
 
 
 def test_parse_multiple_label_variants() -> None:
-    text = (
-        'http_requests_total{status="200"} 80\n'
-        'http_requests_total{status="500"} 5\n'
-    )
+    text = 'http_requests_total{status="200"} 80\n' 'http_requests_total{status="500"} 5\n'
     result = parse_prometheus_text(text)
     assert sorted(result["http_requests_total"]) == [5.0, 80.0]
 
@@ -62,7 +59,7 @@ def test_parse_skips_blank_lines() -> None:
 
 
 def test_parse_handles_float_value() -> None:
-    text = "go_gc_duration_seconds{quantile=\"0\"} 4.9351e-05\n"
+    text = 'go_gc_duration_seconds{quantile="0"} 4.9351e-05\n'
     result = parse_prometheus_text(text)
     assert "go_gc_duration_seconds" in result
     assert abs(result["go_gc_duration_seconds"][0] - 4.9351e-05) < 1e-10
@@ -78,10 +75,7 @@ def test_parse_returns_empty_on_only_comments() -> None:
 
 
 def test_parse_multiple_metrics() -> None:
-    text = (
-        "codex_active_jobs 3\n"
-        "arq_queue_depth 7\n"
-    )
+    text = "codex_active_jobs 3\n" "arq_queue_depth 7\n"
     result = parse_prometheus_text(text)
     assert result["codex_active_jobs"] == [3.0]
     assert result["arq_queue_depth"] == [7.0]

@@ -97,8 +97,12 @@ def test_usage_daily_repr() -> None:
     kid = uuid.uuid4()
     d = date(2026, 4, 29)
     row = UsageDaily(
-        user_id=uid, api_key_id=kid, period=d,
-        requests=5, input_tokens=100, output_tokens=50,
+        user_id=uid,
+        api_key_id=kid,
+        period=d,
+        requests=5,
+        input_tokens=100,
+        output_tokens=50,
     )
     r = repr(row)
     assert "UsageDaily" in r
@@ -179,8 +183,12 @@ async def test_orm_insert_and_select_roundtrip(
     period = date(2026, 4, 29)
 
     row = UsageDaily(
-        user_id=uid, api_key_id=kid, period=period,
-        requests=1, input_tokens=100, output_tokens=50,
+        user_id=uid,
+        api_key_id=kid,
+        period=period,
+        requests=1,
+        input_tokens=100,
+        output_tokens=50,
     )
     sqlite_session.add(row)
     await sqlite_session.commit()
@@ -208,8 +216,12 @@ async def test_orm_accumulate_on_second_write(
     period = date(2026, 4, 28)
 
     row = UsageDaily(
-        user_id=uid, api_key_id=kid, period=period,
-        requests=1, input_tokens=50, output_tokens=25,
+        user_id=uid,
+        api_key_id=kid,
+        period=period,
+        requests=1,
+        input_tokens=50,
+        output_tokens=25,
     )
     sqlite_session.add(row)
     await sqlite_session.commit()
@@ -262,17 +274,19 @@ def _make_tracking_app(user_id: str, key_id: str, status: int = 200):  # type: i
 
     async def state_then_middleware(scope, receive, send):  # type: ignore[no-untyped-def]
         # Inject state before middleware reads it
-        scope.setdefault("state", {}).update({
-            "user_id": user_id,
-            "api_key_id": key_id,
-            "usage": {
-                "total_tokens": 150,
-                "input_tokens": 100,
-                "output_tokens": 50,
-            },
-            "tpm_estimated_cost": 150,
-            "tpm_window_id": 12345,
-        })
+        scope.setdefault("state", {}).update(
+            {
+                "user_id": user_id,
+                "api_key_id": key_id,
+                "usage": {
+                    "total_tokens": 150,
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                },
+                "tpm_estimated_cost": 150,
+                "tpm_window_id": 12345,
+            }
+        )
         await tracking(scope, receive, send)
 
     return state_then_middleware
@@ -447,7 +461,9 @@ async def test_worker_success_calls_usage_daily_upsert() -> None:
         tc.usage = None
         yield tc
 
-    diff_result = DiffResult(diff_blob="", diff_size_bytes=0, diff_truncated=False, files_changed=[])
+    diff_result = DiffResult(
+        diff_blob="", diff_size_bytes=0, diff_truncated=False, files_changed=[]
+    )
     mock_cm = MagicMock()
     mock_cm.__aenter__ = AsyncMock(return_value=AsyncMock())
     mock_cm.__aexit__ = AsyncMock(return_value=False)
@@ -502,7 +518,9 @@ async def test_worker_skips_usage_daily_when_no_api_key_id() -> None:
         tc.usage = None
         yield tc
 
-    diff_result = DiffResult(diff_blob="", diff_size_bytes=0, diff_truncated=False, files_changed=[])
+    diff_result = DiffResult(
+        diff_blob="", diff_size_bytes=0, diff_truncated=False, files_changed=[]
+    )
     mock_cm = MagicMock()
     mock_cm.__aenter__ = AsyncMock(return_value=AsyncMock())
     mock_cm.__aexit__ = AsyncMock(return_value=False)
@@ -515,7 +533,9 @@ async def test_worker_skips_usage_daily_when_no_api_key_id() -> None:
         patch("src.workers.job_handlers.jobs_crud.mark_succeeded", AsyncMock()),
         patch("src.workers.job_handlers.jobs_crud.update_token_counts", AsyncMock()),
         patch("src.workers.job_handlers.publish_job_event", AsyncMock()),
-        patch("src.workers.job_handlers.make_workspace", return_value=pathlib.Path("/tmp/ws-test2")),
+        patch(
+            "src.workers.job_handlers.make_workspace", return_value=pathlib.Path("/tmp/ws-test2")
+        ),
         patch("src.workers.job_handlers.cleanup_workspace", MagicMock()),
         patch("src.workers.job_handlers.git_clone", AsyncMock(return_value=(True, ""))),
         patch("src.workers.job_handlers.git_rev_parse_head", AsyncMock(return_value="abc")),

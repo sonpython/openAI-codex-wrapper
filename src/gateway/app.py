@@ -167,7 +167,6 @@ def create_app() -> FastAPI:
     async def _http_exception_handler(
         request: Request, exc: _HTTPException
     ) -> JSONResponse | Response:
-
         if (
             exc.status_code == 401
             and exc.detail == _SESSION_REQUIRED_DETAIL
@@ -269,6 +268,7 @@ def create_app() -> FastAPI:
     # Admin UI — HTMX + Jinja2 browser interface (session-cookie auth)
     app.include_router(admin_ui_router)
     import os as _os  # noqa: PLC0415
+
     _static_dir = _os.path.join(_os.path.dirname(__file__), "..", "admin_ui", "static")
     app.mount(
         "/admin/ui/static",

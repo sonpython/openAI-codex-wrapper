@@ -116,9 +116,7 @@ async def list_with_aggregates(
     )
 
     # Total count
-    count_result = await session.execute(
-        select(func.count()).select_from(User)
-    )
+    count_result = await session.execute(select(func.count()).select_from(User))
     total: int = count_result.scalar_one()
 
     # Paginated rows

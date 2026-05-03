@@ -32,9 +32,9 @@ from src.settings import get_settings
 # Falls back to last cached value with stale=True if Prometheus is down.
 
 _kpi_cache: dict[str, Any] = {
-    "snapshot": None,       # KPISnapshot | None
-    "fetched_at": 0.0,      # epoch seconds of last successful fetch
-    "stale": False,         # True when last fetch failed and we serve cached
+    "snapshot": None,  # KPISnapshot | None
+    "fetched_at": 0.0,  # epoch seconds of last successful fetch
+    "stale": False,  # True when last fetch failed and we serve cached
 }
 _KPI_CACHE_TTL = 5.0  # seconds
 
@@ -43,15 +43,15 @@ _KPI_CACHE_TTL = 5.0  # seconds
 
 @dataclass
 class KPISnapshot:
-    req_rate_1m: float = 0.0      # requests/s (1-min rate)
-    error_rate_5m: float = 0.0    # error fraction 0–1 (5-min rate)
-    active_jobs: float = 0.0      # current in-flight jobs
-    queue_depth: float = 0.0      # arq queue length
+    req_rate_1m: float = 0.0  # requests/s (1-min rate)
+    error_rate_5m: float = 0.0  # error fraction 0–1 (5-min rate)
+    active_jobs: float = 0.0  # current in-flight jobs
+    queue_depth: float = 0.0  # arq queue length
 
 
 @dataclass
 class SparklineData:
-    req_24h: list[float] = field(default_factory=list)    # hourly req counts
+    req_24h: list[float] = field(default_factory=list)  # hourly req counts
     error_24h: list[float] = field(default_factory=list)  # hourly error counts
 
 
@@ -62,16 +62,16 @@ _PROM_ACTIVE_JOBS = "codex_active_jobs"
 _PROM_QUEUE_DEPTH = "arq_queue_depth"
 
 # Prometheus query expressions
-_QUERY_REQ_RATE_1M = 'rate(http_requests_total[1m])'
+_QUERY_REQ_RATE_1M = "rate(http_requests_total[1m])"
 _QUERY_ERROR_RATE_5M = (
-    'rate(http_requests_total{status=~"5.."}[5m]) / '
-    'rate(http_requests_total[5m])'
+    'rate(http_requests_total{status=~"5.."}[5m]) / ' "rate(http_requests_total[5m])"
 )
-_QUERY_ACTIVE_JOBS = 'codex_active_jobs'
-_QUERY_QUEUE_DEPTH = 'arq_queue_depth'
+_QUERY_ACTIVE_JOBS = "codex_active_jobs"
+_QUERY_QUEUE_DEPTH = "arq_queue_depth"
 
 
 # ── Remote Prometheus helpers ─────────────────────────────────────────────────
+
 
 async def _prom_instant(client: httpx.AsyncClient, base: str, query: str) -> float:
     """Query Prometheus instant value; return 0.0 on any error."""
@@ -120,7 +120,7 @@ async def _prom_range(
 # ── Local text-format parser ───────────────────────────────────────────────────
 
 _METRIC_RE = re.compile(
-    r'^(?P<name>[a-zA-Z_][a-zA-Z0-9_]*)(?:\{[^}]*\})?\s+(?P<value>[0-9.eE+\-]+)'
+    r"^(?P<name>[a-zA-Z_][a-zA-Z0-9_]*)(?:\{[^}]*\})?\s+(?P<value>[0-9.eE+\-]+)"
 )
 
 
@@ -166,6 +166,7 @@ async def _fetch_local_metrics(internal_url: str) -> dict[str, list[float]]:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+
 async def fetch_kpis(prometheus_base: str | None = None) -> KPISnapshot:
     """Return live KPI values from Prometheus or local metrics fallback."""
     settings = get_settings()
@@ -193,7 +194,7 @@ async def fetch_kpis(prometheus_base: str | None = None) -> KPISnapshot:
     queue_depth = _sum_metric(parsed, _PROM_QUEUE_DEPTH)
 
     return KPISnapshot(
-        req_rate_1m=all_requests,   # raw counter — no rate calc without history
+        req_rate_1m=all_requests,  # raw counter — no rate calc without history
         error_rate_5m=0.0,
         active_jobs=active_jobs,
         queue_depth=queue_depth,

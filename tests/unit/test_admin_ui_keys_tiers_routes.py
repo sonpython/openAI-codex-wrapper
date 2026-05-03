@@ -98,6 +98,7 @@ def _make_app(mock_session: MagicMock) -> FastAPI:
         ):
             return make_session_redirect_response(request)
         from fastapi.responses import JSONResponse
+
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
     app.include_router(router)
@@ -229,8 +230,8 @@ async def test_rotate_key_returns_row_partial_with_new_plaintext(
     refreshed_key.id = key_id
 
     [
-        MagicMock(),          # update execute result
-        mock_result_user,     # user select result
+        MagicMock(),  # update execute result
+        mock_result_user,  # user select result
     ]
 
     with (
@@ -267,9 +268,7 @@ async def test_rotate_key_not_found_returns_404(
 
 
 @pytest.mark.asyncio
-async def test_delete_key_returns_200_empty(
-    client: AsyncClient, mock_session: MagicMock
-) -> None:
+async def test_delete_key_returns_200_empty(client: AsyncClient, mock_session: MagicMock) -> None:
     key_id = uuid4()
     with patch(
         "src.admin_ui.keys_page_routes.api_keys_crud.revoke",

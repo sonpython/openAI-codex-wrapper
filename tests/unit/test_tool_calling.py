@@ -227,9 +227,7 @@ def test_format_tools_prompt_inlines_nested_schema() -> None:
                                     "service": {"type": "string"},
                                     "service_data": {
                                         "type": "object",
-                                        "properties": {
-                                            "entity_id": {"type": "string"}
-                                        },
+                                        "properties": {"entity_id": {"type": "string"}},
                                         "required": ["entity_id"],
                                     },
                                 },

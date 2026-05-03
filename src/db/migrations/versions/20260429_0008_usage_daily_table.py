@@ -36,8 +36,15 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "usage_daily",
-        sa.Column("user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False),
-        sa.Column("api_key_id", sa.Uuid(), sa.ForeignKey("api_keys.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column(
+            "user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+        ),
+        sa.Column(
+            "api_key_id",
+            sa.Uuid(),
+            sa.ForeignKey("api_keys.id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
         sa.Column("period", sa.Date(), nullable=False),
         sa.Column("requests", sa.BigInteger(), nullable=False, server_default="0"),
         sa.Column("input_tokens", sa.BigInteger(), nullable=False, server_default="0"),

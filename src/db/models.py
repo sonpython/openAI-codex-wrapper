@@ -139,8 +139,12 @@ class Job(Base):
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
     # Per-job token counts recorded at completion time by the worker.
     # Summed in admin usage queries for daily token breakdowns.
-    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
-    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    input_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0"
+    )
+    output_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0"
+    )
 
     def __repr__(self) -> str:
         return f"Job(id={self.id!s}, status={self.status!r}, user_id={self.user_id!s})"

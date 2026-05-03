@@ -101,9 +101,7 @@ async def get_user_detail(
         raise HTTPException(status_code=404, detail="user_not_found")
 
     keys_result = await session.execute(
-        select(ApiKey)
-        .where(ApiKey.user_id == user_id)
-        .order_by(ApiKey.created_at.desc())
+        select(ApiKey).where(ApiKey.user_id == user_id).order_by(ApiKey.created_at.desc())
     )
     keys = keys_result.scalars().all()
 
@@ -167,6 +165,4 @@ async def get_user_chart_data(
     requests = [int(row.requests) for row in rows]
     tokens = [0] * len(rows)  # daily token breakdown requires jobs.token_count column
 
-    return JSONResponse(
-        content={"labels": labels, "requests": requests, "tokens": tokens}
-    )
+    return JSONResponse(content={"labels": labels, "requests": requests, "tokens": tokens})

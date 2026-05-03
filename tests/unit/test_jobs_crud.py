@@ -360,9 +360,7 @@ async def test_create_job_api_key_id_defaults_to_none(
 # ── update_token_counts ───────────────────────────────────────────────────────
 
 
-async def test_update_token_counts_sets_values(
-    session: AsyncSession, user_id: uuid.UUID
-) -> None:
+async def test_update_token_counts_sets_values(session: AsyncSession, user_id: uuid.UUID) -> None:
     job = await jobs_crud.create_job(
         session,
         user_id=user_id,
@@ -381,9 +379,7 @@ async def test_update_token_counts_sets_values(
     assert job.output_tokens == 75
 
 
-async def test_update_token_counts_zero_values(
-    session: AsyncSession, user_id: uuid.UUID
-) -> None:
+async def test_update_token_counts_zero_values(session: AsyncSession, user_id: uuid.UUID) -> None:
     """Setting 0/0 is valid (codex didn't emit token_usage)."""
     job = await jobs_crud.create_job(
         session,

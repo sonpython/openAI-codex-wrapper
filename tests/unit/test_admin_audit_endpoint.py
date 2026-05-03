@@ -98,7 +98,10 @@ async def test_audit_wrong_token():
 @pytest.mark.anyio
 async def test_audit_empty_list():
     app = _make_app()
-    with patch("src.gateway.routes.admin_audit.audit_crud.list_with_filters", new=AsyncMock(return_value=([], 0))):
+    with patch(
+        "src.gateway.routes.admin_audit.audit_crud.list_with_filters",
+        new=AsyncMock(return_value=([], 0)),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/admin/audit", headers={"X-Admin-Token": _TOKEN})
     assert resp.status_code == 200
@@ -113,7 +116,10 @@ async def test_audit_empty_list():
 async def test_audit_returns_items():
     entry = _make_entry()
     app = _make_app()
-    with patch("src.gateway.routes.admin_audit.audit_crud.list_with_filters", new=AsyncMock(return_value=([entry], 1))):
+    with patch(
+        "src.gateway.routes.admin_audit.audit_crud.list_with_filters",
+        new=AsyncMock(return_value=([entry], 1)),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/admin/audit", headers={"X-Admin-Token": _TOKEN})
     assert resp.status_code == 200
@@ -169,7 +175,9 @@ async def test_audit_user_id_filter_forwarded():
 
     with patch("src.gateway.routes.admin_audit.audit_crud.list_with_filters", new=_mock):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.get(f"/admin/audit?user_id={uid}", headers={"X-Admin-Token": _TOKEN})
+            resp = await client.get(
+                f"/admin/audit?user_id={uid}", headers={"X-Admin-Token": _TOKEN}
+            )
     assert resp.status_code == 200
     assert captured["user_id"] == uid
 
@@ -209,7 +217,10 @@ async def test_audit_detail_null_is_valid():
     """Entry with detail=None serialises correctly (no crash)."""
     entry = _make_entry(detail=None)
     app = _make_app()
-    with patch("src.gateway.routes.admin_audit.audit_crud.list_with_filters", new=AsyncMock(return_value=([entry], 1))):
+    with patch(
+        "src.gateway.routes.admin_audit.audit_crud.list_with_filters",
+        new=AsyncMock(return_value=([entry], 1)),
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/admin/audit", headers={"X-Admin-Token": _TOKEN})
     assert resp.status_code == 200

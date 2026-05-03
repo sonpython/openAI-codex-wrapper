@@ -42,7 +42,6 @@ def _make_app() -> FastAPI:
 
     @app.exception_handler(HTTPException)
     async def _exc(request, exc):  # type: ignore[no-untyped-def]
-
         if exc.status_code == 401 and exc.detail == _SESSION_REQUIRED_DETAIL:
             return make_session_redirect_response(request)
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
@@ -61,6 +60,7 @@ def client(app: FastAPI) -> TestClient:
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
 
 def _patch_settings(token: str = _TOKEN):  # type: ignore[no-untyped-def]
     from pydantic import SecretStr
@@ -84,6 +84,7 @@ def _patch_redis(sid_exists: bool = True):  # type: ignore[no-untyped-def]
 
 def _valid_cookie(token: str = _TOKEN) -> str:
     from src.admin_ui.auth import sign_session
+
     return sign_session(_VALID_SID, token)
 
 
@@ -175,10 +176,14 @@ def test_dashboard_with_valid_session_returns_200(client: TestClient) -> None:
     redis_patch, _ = _patch_redis(sid_exists=True)
     kpi_patch = patch(
         "src.admin_ui.routes.fetch_kpis",
-        new=AsyncMock(return_value=MagicMock(
-            req_rate_1m=1.0, error_rate_5m=0.0,
-            active_jobs=0.0, queue_depth=0.0,
-        )),
+        new=AsyncMock(
+            return_value=MagicMock(
+                req_rate_1m=1.0,
+                error_rate_5m=0.0,
+                active_jobs=0.0,
+                queue_depth=0.0,
+            )
+        ),
     )
     spark_patch = patch(
         "src.admin_ui.routes.fetch_sparklines",

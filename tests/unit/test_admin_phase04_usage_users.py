@@ -212,6 +212,7 @@ def test_daily_usage_schema() -> None:
 
 def _make_admin_users_app() -> FastAPI:
     from src.settings import get_settings
+
     get_settings.cache_clear()
     from src.db.engine import get_session
     from src.gateway.routes.admin_users import router
@@ -238,6 +239,7 @@ async def test_list_users_no_auth_returns_403() -> None:
 async def test_list_users_returns_200_with_mocked_aggregates() -> None:
     from src.db.crud.users import UserAggregate
     from src.settings import get_settings
+
     get_settings.cache_clear()
 
     uid = uuid.uuid4()
@@ -250,7 +252,10 @@ async def test_list_users_returns_200_with_mocked_aggregates() -> None:
         current_month_tokens=1000,
     )
 
-    with patch("src.gateway.routes.admin_users.list_with_aggregates", new=AsyncMock(return_value=([mock_agg], 1))):
+    with patch(
+        "src.gateway.routes.admin_users.list_with_aggregates",
+        new=AsyncMock(return_value=([mock_agg], 1)),
+    ):
         app = _make_admin_users_app()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/admin/users", headers=_ADMIN_HEADERS)
@@ -275,6 +280,7 @@ async def test_list_user_keys_no_auth_returns_403() -> None:
 
 def _make_admin_usage_app() -> FastAPI:
     from src.settings import get_settings
+
     get_settings.cache_clear()
     from src.db.engine import get_session
     from src.gateway.routes.admin_usage import router
@@ -308,7 +314,9 @@ async def test_usage_summary_invalid_range_returns_400() -> None:
 
 @pytest.mark.asyncio
 async def test_usage_summary_valid_range_returns_200() -> None:
-    with patch("src.gateway.routes.admin_usage._query_daily_series", new=AsyncMock(return_value=[])):
+    with patch(
+        "src.gateway.routes.admin_usage._query_daily_series", new=AsyncMock(return_value=[])
+    ):
         app = _make_admin_usage_app()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/admin/usage/summary?range=7d", headers=_ADMIN_HEADERS)
@@ -348,7 +356,9 @@ async def test_usage_by_key_invalid_range_returns_400() -> None:
 
 @pytest.mark.asyncio
 async def test_usage_by_key_valid_range_returns_200() -> None:
-    with patch("src.gateway.routes.admin_usage._query_daily_series", new=AsyncMock(return_value=[])):
+    with patch(
+        "src.gateway.routes.admin_usage._query_daily_series", new=AsyncMock(return_value=[])
+    ):
         app = _make_admin_usage_app()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get(
@@ -369,6 +379,7 @@ async def test_usage_by_key_returns_rows_when_key_matches() -> None:
         captured_kwargs.update(kwargs)
         if kwargs.get("api_key_id") == key_id:
             from src.gateway.routes.admin_usage import DailyUsage
+
             return [DailyUsage(day="2026-04-25", requests=3, tokens=450)]
         return []
 
@@ -416,7 +427,9 @@ async def test_usage_summary_returns_real_token_sums() -> None:
 
     fake_data = [DailyUsage(day="2026-04-28", requests=5, tokens=1200)]
 
-    with patch("src.gateway.routes.admin_usage._query_daily_series", new=AsyncMock(return_value=fake_data)):
+    with patch(
+        "src.gateway.routes.admin_usage._query_daily_series", new=AsyncMock(return_value=fake_data)
+    ):
         app = _make_admin_usage_app()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/admin/usage/summary?range=7d", headers=_ADMIN_HEADERS)
@@ -434,6 +447,7 @@ async def test_usage_summary_returns_real_token_sums() -> None:
 def _make_ui_app(mock_session: MagicMock) -> FastAPI:
     """Minimal app with users page sub-router; injects mock session, no auth guard."""
     from src.settings import get_settings
+
     get_settings.cache_clear()
     from src.admin_ui.users_page_routes import router
     from src.db.engine import get_session
