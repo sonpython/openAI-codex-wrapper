@@ -1,10 +1,11 @@
 ---
 title: "Phase 2 — Codex runner mode dispatch"
-status: pending
+status: completed
 priority: P1
 effort: 2.5h
 blocks: [phase-04]
 blocked_by: [phase-01]
+completed: 2026-05-04
 ---
 
 # Phase 2 — Codex runner mode dispatch
@@ -138,32 +139,32 @@ def resolve_sandbox_flag(api_key_mode: str) -> str:
    - `docs/system-architecture.md`: insert mapping table + sequence under existing "Codex runner" section.
    - `docs/operations-runbook.md`: warn that `vps` mode disables codex's internal sandbox; container is the boundary; janitor TTL 1h.
 
-## Verification log (fill at execution time)
+## Verification log (filled at execution time)
 
-- Codex version: `___`
-- `codex exec --help | grep sandbox` output: `___`
-- Confirmed flag: `___` (expected `danger-full-access`)
+- Codex version: `0.125`
+- `codex exec --help | grep sandbox` output: `--sandbox {read-only,workspace-write,danger-full-access}` (verified live on 192.168.1.120)
+- Confirmed flag: `danger-full-access` (matches expectation; tested with vps mode write to /tmp/codex-smoke.txt inside gateway container)
 
 ## Todo List
 
-- [ ] Verify codex 0.125 `--sandbox danger-full-access` flag on remote
-- [ ] Refactor `run_codex` to `sandbox_mode`
-- [ ] Add `resolve_sandbox_flag` helper
-- [ ] Plumb `request.state.codex_mode` in auth middleware
-- [ ] Wire chat_completions route (501 + dispatch)
-- [ ] Wire responses route (501 + dispatch)
-- [ ] Adapt job worker callsite
-- [ ] Update unit tests (mock-based)
-- [ ] Update docs/system-architecture.md + operations-runbook.md
-- [ ] `pytest tests/unit -q` green
-- [ ] Compile-check all modified files
+- [x] Verify codex 0.125 `--sandbox danger-full-access` flag on remote
+- [x] Refactor `run_codex` to `sandbox_mode`
+- [x] Add `resolve_sandbox_flag` helper
+- [x] Plumb `request.state.codex_mode` in auth middleware
+- [x] Wire chat_completions route (501 + dispatch)
+- [x] Wire responses route (501 + dispatch)
+- [x] Adapt job worker callsite
+- [x] Update unit tests (mock-based)
+- [x] Update docs/system-architecture.md + operations-runbook.md
+- [x] `pytest tests/unit -q` green
+- [x] Compile-check all modified files
 
 ## Success Criteria
 
-- [ ] Unit tests green including new mode-dispatch tests.
-- [ ] argv inspection: `mode=sandbox` → `--sandbox read-only`; `mode=vps` → `--sandbox danger-full-access`.
-- [ ] `mode=local-bridge` → 501 from both `/v1/chat/completions` and `/v1/responses` without invoking runner.
-- [ ] No `allow_write` references left in src/ (grep returns 0).
+- [x] Unit tests green including new mode-dispatch tests.
+- [x] argv inspection: `mode=sandbox` → `--sandbox read-only`; `mode=vps` → `--sandbox danger-full-access`.
+- [x] `mode=local-bridge` → 501 from both `/v1/chat/completions` and `/v1/responses` without invoking runner.
+- [x] No `allow_write` references left in src/ (grep returns 0).
 
 ## Risk Assessment
 

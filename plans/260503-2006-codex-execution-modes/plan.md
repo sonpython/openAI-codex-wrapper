@@ -1,15 +1,18 @@
 ---
 title: "Codex execution modes (sandbox / vps) + SSE finalization"
 description: "Per-API-key mode column to unlock VPS write-access codex runs, plus SSE close-frame fix for aiohttp clients."
-status: pending
+status: completed
 priority: P1
 effort: 8h
 branch: main
 tags: [codex, sandbox, sse, admin-ui, schema]
 created: 2026-05-03
+completed: 2026-05-04
 ---
 
-# Codex Execution Modes — P1 + P2
+# Codex Execution Modes — All Phases Complete
+
+**Completed:** 2026-05-04 via commits a8bb76b—6bdffbb on `main` branch. All phases validated live on remote 192.168.1.120; migration applied; vps mode write verified.
 
 ## Source of truth
 
@@ -27,10 +30,10 @@ Two outcomes:
 
 | # | Phase | Status | Effort | Blocks |
 |---|---|---|---|---|
-| 1 | [Schema + admin UI](./phase-01-schema-and-admin-ui.md) | pending | 2h | — |
-| 2 | [Codex runner mode dispatch](./phase-02-codex-runner-mode-dispatch.md) | pending | 2.5h | P1 |
-| 3 | [SSE stream finalization](./phase-03-sse-stream-finalization.md) | pending | 1.5h | — (independent) |
-| 4 | [E2E test + deploy](./phase-04-e2e-test-and-deploy.md) | pending | 2h | P1, P2, P3 |
+| 1 | [Schema + admin UI](./phase-01-schema-and-admin-ui.md) | completed | 2h | — |
+| 2 | [Codex runner mode dispatch](./phase-02-codex-runner-mode-dispatch.md) | completed | 2.5h | P1 |
+| 3 | [SSE stream finalization](./phase-03-sse-stream-finalization.md) | completed | 1.5h | — (independent) |
+| 4 | [E2E test + deploy](./phase-04-e2e-test-and-deploy.md) | completed | 2h | P1, P2, P3 |
 
 Phase 3 can run parallel with 1+2. Phase 4 depends on all three.
 

@@ -1,10 +1,11 @@
 ---
 title: "Phase 1 — Schema + admin UI mode dropdown"
-status: pending
+status: completed
 priority: P1
 effort: 2h
 blocks: [phase-02]
 blocked_by: []
+completed: 2026-05-04
 ---
 
 # Phase 1 — Schema + admin UI mode dropdown
@@ -133,24 +134,24 @@ Re-imported by both admin endpoints (REST + UI) — DRY.
 
 ## Todo List
 
-- [ ] Write migration 0010
-- [ ] Update ORM model
-- [ ] Extend crud helper + constants
-- [ ] Extend REST admin endpoint schema + handler
-- [ ] Extend admin UI route handler
-- [ ] Update admin UI templates (form + row + thead)
-- [ ] Add unit tests (REST + UI)
-- [ ] Run `alembic upgrade head` and `pytest tests/unit -q`
-- [ ] Verify downgrade is clean (`alembic downgrade -1` then `upgrade head`)
+- [x] Write migration 0010
+- [x] Update ORM model
+- [x] Extend crud helper + constants
+- [x] Extend REST admin endpoint schema + handler
+- [x] Extend admin UI route handler
+- [x] Update admin UI templates (form + row + thead)
+- [x] Add unit tests (REST + UI)
+- [x] Run `alembic upgrade head` and `pytest tests/unit -q`
+- [x] Verify downgrade is clean (`alembic downgrade -1` then `upgrade head`)
 
 ## Success Criteria
 
-- [ ] `alembic upgrade head` applies cleanly on fresh DB and on existing DB at rev 0009.
-- [ ] All existing rows have `mode='sandbox'` after migration.
-- [ ] `POST /admin/api-keys {"mode":"vps",...}` returns 201 with `mode` in body.
-- [ ] `POST /admin/api-keys {"mode":"bogus",...}` returns 422.
-- [ ] Admin UI screenshot/manual: dropdown shows three options, `local-bridge` disabled.
-- [ ] All unit tests green.
+- [x] `alembic upgrade head` applies cleanly on fresh DB and on existing DB at rev 0009.
+- [x] All existing rows have `mode='sandbox'` after migration.
+- [x] `POST /admin/api-keys {"mode":"vps",...}` returns 201 with `mode` in body.
+- [x] `POST /admin/api-keys {"mode":"bogus",...}` returns 422.
+- [x] Admin UI screenshot/manual: dropdown shows three options, `local-bridge` disabled.
+- [x] All unit tests green.
 
 ## Risk Assessment
 

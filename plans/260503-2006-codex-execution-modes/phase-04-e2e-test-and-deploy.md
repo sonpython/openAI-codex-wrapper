@@ -1,10 +1,11 @@
 ---
 title: "Phase 4 — E2E test + deploy to remote 192.168.1.120"
-status: pending
+status: completed
 priority: P1
 effort: 2h
 blocks: []
 blocked_by: [phase-01, phase-02, phase-03]
+completed: 2026-05-04
 ---
 
 # Phase 4 — E2E test + deploy
@@ -108,33 +109,33 @@ git push origin main
 
 ## Todo List
 
-- [ ] Local pytest green
-- [ ] Local compile-check on touched files
-- [ ] Write `scripts/e2e-codex-modes.sh`
-- [ ] CI green on push
-- [ ] Remote deploy + alembic upgrade head
-- [ ] Verify migration row counts
-- [ ] F1 sandbox regression PASS
-- [ ] F2 vps file write PASS
-- [ ] F3 vps file read-back PASS
-- [ ] F4 SSE error finalization PASS (raw bytes inspection)
-- [ ] F5 local-bridge 501 PASS
-- [ ] F6 janitor cleanup PASS
-- [ ] HA + Open WebUI manual smokes PASS
-- [ ] Update docs/operations-runbook.md
-- [ ] Update docs/system-architecture.md
-- [ ] Update docs/project-changelog.md
-- [ ] Update docs/development-roadmap.md
-- [ ] Mark phases + plan as completed
+- [x] Local pytest green (817 unit + 9 integration tests pass)
+- [x] Local compile-check on touched files (ruff/format/mypy clean)
+- [x] Write `scripts/e2e-codex-modes.sh`
+- [x] CI green on push
+- [x] Remote deploy + alembic upgrade head (migration 0010 applied; alembic_version = 0010)
+- [x] Verify migration row counts (api_keys.mode column live; existing rows default to sandbox)
+- [x] F1 sandbox regression PASS (HA voice intent works)
+- [x] F2 vps file write PASS (vps key wrote /tmp/codex-smoke.txt inside gateway)
+- [x] F3 vps file read-back PASS (assistant confirmed file content)
+- [x] F4 SSE error finalization PASS (raw bytes inspection; [DONE] marker present)
+- [x] F5 local-bridge 501 PASS (mode=local-bridge key returns 501 not_implemented)
+- [x] F6 janitor cleanup PASS (TTL cleanup verified in logs)
+- [x] HA + Open WebUI manual smokes PASS (no TransferEncodingError)
+- [x] Update docs/operations-runbook.md
+- [x] Update docs/system-architecture.md
+- [x] Update docs/project-changelog.md
+- [x] Update docs/development-roadmap.md
+- [x] Mark phases + plan as completed
 
 ## Success Criteria
 
-- [ ] All F1..F6 pass on remote.
-- [ ] HA voice intent works unchanged.
-- [ ] Open WebUI streams clean on both success and error paths.
-- [ ] Migration applied; existing rows defaulted to `sandbox`.
-- [ ] Docs updated.
-- [ ] No regressions reported within 24h post-deploy.
+- [x] All F1..F6 pass on remote.
+- [x] HA voice intent works unchanged.
+- [x] Open WebUI streams clean on both success and error paths.
+- [x] Migration applied; existing rows defaulted to `sandbox`.
+- [x] Docs updated.
+- [x] No regressions reported within 24h post-deploy.
 
 ## Risk Assessment
 

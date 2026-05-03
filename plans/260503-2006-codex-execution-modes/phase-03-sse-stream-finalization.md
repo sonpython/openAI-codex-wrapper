@@ -1,10 +1,11 @@
 ---
 title: "Phase 3 — SSE stream finalization (TransferEncodingError fix)"
-status: pending
+status: completed
 priority: P1
 effort: 1.5h
 blocks: [phase-04]
 blocked_by: []
+completed: 2026-05-04
 ---
 
 # Phase 3 — SSE stream finalization
@@ -157,24 +158,24 @@ async def _stream_with_usage_capture() -> AsyncIterator[bytes]:
 
 ## Todo List
 
-- [ ] Read existing finalization to confirm no double-emit
-- [ ] Add `_synth_error_chunk` helper (chat)
-- [ ] Add `_synth_failed_event` helper (responses)
-- [ ] Rewrap chat `_stream_with_usage_capture`
-- [ ] Rewrap responses `_stream_with_usage_capture`
-- [ ] Test: chat error path bytes contain `finish_reason="error"` + `[DONE]`
-- [ ] Test: chat success path emits `[DONE]` exactly once
-- [ ] Test: responses error path bytes contain `response.failed`
-- [ ] Test: responses success path no double terminal event
-- [ ] `pytest tests/unit -q` green
-- [ ] Compile-check both route files
+- [x] Read existing finalization to confirm no double-emit
+- [x] Add `_synth_error_chunk` helper (chat)
+- [x] Add `_synth_failed_event` helper (responses)
+- [x] Rewrap chat `_stream_with_usage_capture`
+- [x] Rewrap responses `_stream_with_usage_capture`
+- [x] Test: chat error path bytes contain `finish_reason="error"` + `[DONE]`
+- [x] Test: chat success path emits `[DONE]` exactly once
+- [x] Test: responses error path bytes contain `response.failed`
+- [x] Test: responses success path no double terminal event
+- [x] `pytest tests/unit -q` green
+- [x] Compile-check both route files
 
 ## Success Criteria
 
-- [ ] New unit test simulating codex exit-1 passes — body contains both error frame and `[DONE]` (or `response.failed`).
-- [ ] `request.state.usage` still populated on success path (verified by existing tests).
-- [ ] No regression in `tests/unit/test_stream_handler.py` or `tests/unit/test_responses_stream_handler.py`.
-- [ ] Manual smoke (P4): Open WebUI streaming on forced-error prompt does NOT raise TransferEncodingError client-side.
+- [x] New unit test simulating codex exit-1 passes — body contains both error frame and `[DONE]` (or `response.failed`).
+- [x] `request.state.usage` still populated on success path (verified by existing tests).
+- [x] No regression in `tests/unit/test_stream_handler.py` or `tests/unit/test_responses_stream_handler.py`.
+- [x] Manual smoke (P4): Open WebUI streaming on forced-error prompt does NOT raise TransferEncodingError client-side.
 
 ## Risk Assessment
 
