@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.hashing import generate_api_key
 from src.db.crud import api_keys as api_keys_crud
+from src.db.crud.api_keys import DEFAULT_MODE, VALID_MODES
 from src.db.crud.users import get_or_create_by_email
 from src.db.engine import get_session
 from src.db.models import ApiKey
@@ -56,12 +57,20 @@ class AdminCreateKeyRequest(BaseModel):
     user_email: EmailStr
     name: str
     tier: str = "free"
+    mode: str = DEFAULT_MODE
 
     @field_validator("tier")
     @classmethod
     def validate_tier(cls, v: str) -> str:
         if v not in _VALID_TIERS:
             raise ValueError(f"tier must be one of {sorted(_VALID_TIERS)}")
+        return v
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        if v not in VALID_MODES:
+            raise ValueError(f"mode must be one of {sorted(VALID_MODES)}")
         return v
 
     @field_validator("name")
@@ -78,6 +87,7 @@ class AdminCreateKeyResponse(BaseModel):
     key: str  # plaintext — returned ONCE; never retrievable again
     prefix: str
     tier: str
+    mode: str
     created_at: datetime
 
 
@@ -87,6 +97,7 @@ class ApiKeySummary(BaseModel):
     prefix: str
     name: str
     tier: str
+    mode: str
     last_used_at: datetime | None
     revoked_at: datetime | None
     created_at: datetime
@@ -142,7 +153,9 @@ async def create_api_key(
     if created:
         logger.info("admin.user_created", email=str(body.user_email))
 
-    api_key, plaintext = await api_keys_crud.create(session, user.id, body.name, body.tier)
+    api_key, plaintext = await api_keys_crud.create(
+        session, user.id, body.name, body.tier, body.mode
+    )
     await session.commit()
 
     logger.info(
@@ -150,6 +163,7 @@ async def create_api_key(
         key_id=str(api_key.id),
         prefix=api_key.prefix,
         tier=api_key.tier,
+        mode=api_key.mode,
         user_id=str(user.id),
     )
 
@@ -158,6 +172,7 @@ async def create_api_key(
         key=plaintext,
         prefix=api_key.prefix,
         tier=api_key.tier,
+        mode=api_key.mode,
         created_at=api_key.created_at,
     )
 
@@ -178,6 +193,7 @@ async def list_api_keys(
             prefix=k.prefix,
             name=k.name,
             tier=k.tier,
+            mode=k.mode,
             last_used_at=k.last_used_at,
             revoked_at=k.revoked_at,
             created_at=k.created_at,

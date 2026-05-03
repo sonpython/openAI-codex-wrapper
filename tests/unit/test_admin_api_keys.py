@@ -40,13 +40,16 @@ _ADMIN_TOKEN = "test-admin-secret"
 _WRONG_TOKEN = "wrong-token"
 
 
-def _mock_api_key_row(*, tier: str = "free", revoked: bool = False) -> MagicMock:
+def _mock_api_key_row(
+    *, tier: str = "free", mode: str = "sandbox", revoked: bool = False
+) -> MagicMock:
     row = MagicMock()
     row.id = uuid4()
     row.user_id = uuid4()
     row.prefix = "cwk_testprefi"
     row.name = "test key"
     row.tier = tier
+    row.mode = mode
     row.last_used_at = None
     row.revoked_at = datetime.now() if revoked else None  # noqa: DTZ005 — test only
     row.created_at = datetime.now()  # noqa: DTZ005 — test only
@@ -248,3 +251,69 @@ async def test_revoke_nonexistent_key_returns_404(client: AsyncClient) -> None:
         )
 
     assert response.status_code == 404
+
+
+# ── Mode field ────────────────────────────────────────────────────────────────
+
+
+class TestModeField:
+    """POST /admin/api-keys mode validation and persistence."""
+
+    @pytest.mark.asyncio
+    async def test_create_key_with_mode_vps_persists_mode(self, client: AsyncClient) -> None:
+        mock_key = _mock_api_key_row(mode="vps")
+        plaintext = "cwk_" + "V" * 43
+
+        with (
+            patch(
+                "src.gateway.routes.admin_api_keys.get_or_create_by_email",
+                new=AsyncMock(return_value=(MagicMock(id=mock_key.user_id), False)),
+            ),
+            patch(
+                "src.gateway.routes.admin_api_keys.api_keys_crud.create",
+                new=AsyncMock(return_value=(mock_key, plaintext)),
+            ),
+        ):
+            response = await client.post(
+                "/admin/api-keys",
+                json={"user_email": "a@b.com", "name": "vps-key", "tier": "pro", "mode": "vps"},
+                headers={"X-Admin-Token": _ADMIN_TOKEN},
+            )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["mode"] == "vps"
+
+    @pytest.mark.asyncio
+    async def test_create_key_without_mode_defaults_to_sandbox(self, client: AsyncClient) -> None:
+        mock_key = _mock_api_key_row(mode="sandbox")
+        plaintext = "cwk_" + "S" * 43
+
+        with (
+            patch(
+                "src.gateway.routes.admin_api_keys.get_or_create_by_email",
+                new=AsyncMock(return_value=(MagicMock(id=mock_key.user_id), False)),
+            ),
+            patch(
+                "src.gateway.routes.admin_api_keys.api_keys_crud.create",
+                new=AsyncMock(return_value=(mock_key, plaintext)),
+            ),
+        ):
+            response = await client.post(
+                "/admin/api-keys",
+                json={"user_email": "a@b.com", "name": "default-key", "tier": "free"},
+                headers={"X-Admin-Token": _ADMIN_TOKEN},
+            )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["mode"] == "sandbox"
+
+    @pytest.mark.asyncio
+    async def test_create_key_invalid_mode_returns_422(self, client: AsyncClient) -> None:
+        response = await client.post(
+            "/admin/api-keys",
+            json={"user_email": "a@b.com", "name": "bad-key", "tier": "free", "mode": "bogus"},
+            headers={"X-Admin-Token": _ADMIN_TOKEN},
+        )
+        assert response.status_code == 422

@@ -26,15 +26,12 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import BigInteger, Date, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-
-class Base(DeclarativeBase):
-    """Project-wide declarative base.
-
-    All ORM models must inherit from this class so Alembic can discover them
-    via ``Base.metadata`` in ``src/db/migrations/env.py``.
-    """
+# Base lives in src.db.base to avoid circular imports with satellite model
+# modules (models_audit_log, models_usage_daily) that both need Base and are
+# re-imported at the bottom of this file for Alembic metadata discovery.
+from src.db.base import Base
 
 
 class User(Base):
@@ -80,6 +77,10 @@ class ApiKey(Base):
     prefix: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     tier: Mapped[str] = mapped_column(String(8), nullable=False, default="free")
+    # Execution mode: sandbox (read-only codex) | vps (full-access) | local-bridge (future)
+    mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="sandbox", server_default=text("'sandbox'")
+    )
     last_used_at: Mapped[datetime | None] = mapped_column(nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
@@ -87,7 +88,7 @@ class ApiKey(Base):
     user: Mapped[User] = relationship("User", back_populates="api_keys", lazy="noload")
 
     def __repr__(self) -> str:
-        return f"ApiKey(id={self.id!s}, prefix={self.prefix!r}, tier={self.tier!r})"
+        return f"ApiKey(id={self.id!s}, prefix={self.prefix!r}, tier={self.tier!r}, mode={self.mode!r})"
 
 
 class Job(Base):

@@ -14,6 +14,14 @@
       {{ key.tier }}
     </span>
   </td>
+  <td class="px-4 py-3">
+    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+      {% if key.mode == 'sandbox' %}bg-gray-100 text-gray-600
+      {% elif key.mode == 'vps' %}bg-emerald-100 text-emerald-700
+      {% else %}bg-yellow-100 text-yellow-700{% endif %}">
+      {{ key.mode }}
+    </span>
+  </td>
   <td class="px-4 py-3 text-gray-600 text-xs">{{ key.user_email }}</td>
   <td class="px-4 py-3 text-gray-500 text-xs">
     {% if key.last_used_at %}<time datetime="{{ key.last_used_at.isoformat() }}" data-fmt="full">{{ key.last_used_at.strftime('%Y-%m-%d %H:%M') }}</time>{% else %}Never{% endif %}
@@ -42,7 +50,7 @@
 {% if new_plaintext %}
 {# Raw key shown ONCE immediately after create/rotate. Never re-rendered after initial display. #}
 <tr id="row-{{ key.id }}-reveal" class="bg-amber-50 border-l-4 border-amber-400">
-  <td colspan="8" class="px-4 py-3">
+  <td colspan="9" class="px-4 py-3">
     <div data-key-display class="flex flex-col gap-2">
       <p class="text-xs font-semibold text-amber-800">
         Copy this key now — it will never be shown again.

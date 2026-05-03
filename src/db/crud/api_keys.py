@@ -26,6 +26,10 @@ from src.db.models import ApiKey
 
 logger = structlog.get_logger(__name__)
 
+# Execution mode constants — single source of truth; imported by admin REST + UI routes.
+VALID_MODES: frozenset[str] = frozenset({"sandbox", "vps", "local-bridge"})
+DEFAULT_MODE: str = "sandbox"
+
 # Strong references to in-flight background tasks.
 # Without this set, the GC may collect a Task before it completes if no other
 # reference exists (asyncio only holds a weak ref). The done_callback removes
@@ -38,12 +42,17 @@ async def create(
     user_id: UUID,
     name: str,
     tier: str = "free",
+    mode: str = DEFAULT_MODE,
 ) -> tuple[ApiKey, str]:
     """Create a new ApiKey row and return (api_key_row, plaintext).
 
     Plaintext is returned ONCE here. Callers must forward it to the admin
     response — it is never retrievable again after this call returns.
+
+    Raises ValueError if mode is not in VALID_MODES.
     """
+    if mode not in VALID_MODES:
+        raise ValueError(f"mode must be one of {sorted(VALID_MODES)}, got {mode!r}")
     plaintext, prefix, key_hash = generate_api_key()
     api_key = ApiKey(
         user_id=user_id,
@@ -51,6 +60,7 @@ async def create(
         prefix=prefix,
         name=name,
         tier=tier,
+        mode=mode,
     )
     session.add(api_key)
     await session.flush()  # populate id + server_default created_at

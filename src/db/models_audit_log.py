@@ -36,9 +36,10 @@ from uuid import UUID
 from sqlalchemy import JSON, BigInteger, Boolean, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-# Base is defined in models.py. This module is only ever imported from the
-# bottom of models.py (after Base exists), so this import is safe.
-from src.db.models import Base
+# Base lives in src.db.base (not models.py) to avoid a circular import:
+#   models.py re-exports AuditLog → models_audit_log → models.py (cycle!)
+# Both models.py and this module now independently import from src.db.base.
+from src.db.base import Base
 
 
 class AuditLog(Base):

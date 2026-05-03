@@ -38,13 +38,14 @@ os.environ.setdefault("ADMIN_TOKEN", "test-admin-secret")
 _SID = "test-session-id-abc123"
 
 
-def _mock_key_row(tier: str = "free", revoked: bool = False) -> MagicMock:
+def _mock_key_row(tier: str = "free", mode: str = "sandbox", revoked: bool = False) -> MagicMock:
     row = MagicMock()
     row.id = uuid4()
     row.user_id = uuid4()
     row.prefix = "cwk_testprefix"
     row.name = "test-key"
     row.tier = tier
+    row.mode = mode
     row.last_used_at = None
     row.revoked_at = datetime(2025, 1, 1) if revoked else None  # noqa: DTZ001
     row.created_at = datetime(2025, 1, 1, 12, 0, 0)  # noqa: DTZ001
@@ -375,5 +376,45 @@ async def test_save_tier_non_numeric_returns_400(client: AsyncClient) -> None:
     response = await client.put(
         "/admin/ui/tiers/free/_save",
         data={"rpm": "abc", "tpm": "1000", "concurrent": "2", "monthly_quota": "50000"},
+    )
+    assert response.status_code == 400
+
+
+# ── Mode field (admin UI) ─────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_key_with_mode_vps_returns_row_with_vps_badge(
+    client: AsyncClient, mock_session: MagicMock
+) -> None:
+    """POST _create with mode=vps should return a row partial containing 'vps'."""
+    key = _mock_key_row(mode="vps")
+    user = _mock_user("bob@example.com")
+    plaintext = "cwk_" + "V" * 43
+
+    with (
+        patch(
+            "src.admin_ui.keys_page_routes.get_or_create_by_email",
+            new=AsyncMock(return_value=(user, False)),
+        ),
+        patch(
+            "src.admin_ui.keys_page_routes.api_keys_crud.create",
+            new=AsyncMock(return_value=(key, plaintext)),
+        ),
+    ):
+        response = await client.post(
+            "/admin/ui/keys/_create",
+            data={"user_email": "bob@example.com", "name": "vps-key", "tier": "pro", "mode": "vps"},
+        )
+
+    assert response.status_code == 200
+    assert b"vps" in response.content
+
+
+@pytest.mark.asyncio
+async def test_create_key_invalid_mode_returns_400(client: AsyncClient) -> None:
+    response = await client.post(
+        "/admin/ui/keys/_create",
+        data={"user_email": "a@b.com", "name": "key", "tier": "free", "mode": "invalid"},
     )
     assert response.status_code == 400

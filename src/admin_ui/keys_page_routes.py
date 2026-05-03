@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.admin_ui.templates_env import templates
 from src.auth.hashing import generate_api_key
 from src.db.crud import api_keys as api_keys_crud
+from src.db.crud.api_keys import DEFAULT_MODE, VALID_MODES
 from src.db.crud.users import get_or_create_by_email
 from src.db.engine import get_session
 from src.db.models import ApiKey, User
@@ -46,6 +47,7 @@ def _build_key_dict(k: ApiKey, user_email: str) -> dict[str, Any]:
         "prefix": k.prefix,
         "name": k.name,
         "tier": k.tier,
+        "mode": k.mode,
         "user_email": user_email,
         "last_used_at": k.last_used_at,
         "revoked_at": k.revoked_at,
@@ -80,11 +82,17 @@ async def post_create_key(
     user_email: Annotated[str, Form()],
     name: Annotated[str, Form()],
     tier: Annotated[str, Form()] = "free",
+    mode: Annotated[str, Form()] = DEFAULT_MODE,
 ) -> HTMLResponse:
     """HTMX: create a new API key, return row partial with raw key shown once."""
     if tier not in _VALID_TIERS:
         return HTMLResponse(
             content=f'<p class="text-red-600 text-sm">Invalid tier: {tier}</p>',
+            status_code=400,
+        )
+    if mode not in VALID_MODES:
+        return HTMLResponse(
+            content=f'<p class="text-red-600 text-sm">Invalid mode: {mode}</p>',
             status_code=400,
         )
     name = name.strip()
@@ -96,9 +104,11 @@ async def post_create_key(
 
     try:
         user, _ = await get_or_create_by_email(session, user_email)
-        api_key, plaintext = await api_keys_crud.create(session, user.id, name, tier)
+        api_key, plaintext = await api_keys_crud.create(session, user.id, name, tier, mode)
         await session.commit()
-        logger.info("admin_ui.key_created", key_id=str(api_key.id), tier=api_key.tier)
+        logger.info(
+            "admin_ui.key_created", key_id=str(api_key.id), tier=api_key.tier, mode=api_key.mode
+        )
         return templates.TemplateResponse(
             request,
             "partials/keys_row.html",
