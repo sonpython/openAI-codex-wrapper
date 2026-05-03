@@ -160,7 +160,7 @@ async def run_codex_job(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
                     summary_parts.append(str(evt.item.text))
 
                 # Accumulate token usage from TurnCompleted / TurnFailed events.
-                if isinstance(evt, (TurnCompleted, TurnFailed)) and evt.usage is not None:
+                if isinstance(evt, TurnCompleted | TurnFailed) and evt.usage is not None:
                     total_input_tokens += evt.usage.input_tokens
                     total_output_tokens += evt.usage.output_tokens
 

@@ -29,7 +29,7 @@ import os
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -39,10 +39,9 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("ADMIN_TOKEN", "test-admin-secret")
 
 import pytest
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-
-from src.gateway.routes.admin_usage import parse_range, _VALID_RANGES
+from src.gateway.routes.admin_usage import _VALID_RANGES, parse_range
 
 _TOKEN = "test-admin-secret"
 _ADMIN_HEADERS = {"X-Admin-Token": _TOKEN}
@@ -180,7 +179,7 @@ def test_user_aggregate_fields() -> None:
     from src.db.crud.users import UserAggregate
 
     uid = uuid.uuid4()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     agg = UserAggregate(
         id=uid,
         email="test@example.com",
@@ -214,8 +213,8 @@ def test_daily_usage_schema() -> None:
 def _make_admin_users_app() -> FastAPI:
     from src.settings import get_settings
     get_settings.cache_clear()
-    from src.gateway.routes.admin_users import router
     from src.db.engine import get_session
+    from src.gateway.routes.admin_users import router
 
     app = FastAPI()
     app.include_router(router, prefix="/admin")
@@ -245,7 +244,7 @@ async def test_list_users_returns_200_with_mocked_aggregates() -> None:
     mock_agg = UserAggregate(
         id=uid,
         email="alice@example.com",
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
         key_count=2,
         current_month_requests=50,
         current_month_tokens=1000,
@@ -277,8 +276,8 @@ async def test_list_user_keys_no_auth_returns_403() -> None:
 def _make_admin_usage_app() -> FastAPI:
     from src.settings import get_settings
     get_settings.cache_clear()
-    from src.gateway.routes.admin_usage import router
     from src.db.engine import get_session
+    from src.gateway.routes.admin_usage import router
 
     app = FastAPI()
     app.include_router(router, prefix="/admin")
@@ -363,7 +362,6 @@ async def test_usage_by_key_valid_range_returns_200() -> None:
 async def test_usage_by_key_returns_rows_when_key_matches() -> None:
     """by-key endpoint forwards correct api_key_id filter to _query_daily_series."""
     key_id = uuid.uuid4()
-    expected = [{"day": "2026-04-25", "requests": 3, "tokens": 450}]
 
     captured_kwargs: dict[str, Any] = {}
 
@@ -458,7 +456,7 @@ async def test_users_page_renders_200() -> None:
     mock_agg = UserAggregate(
         id=uid,
         email="bob@example.com",
-        created_at=datetime(2026, 1, 15, tzinfo=timezone.utc),
+        created_at=datetime(2026, 1, 15, tzinfo=UTC),
         key_count=1,
         current_month_requests=10,
         current_month_tokens=200,

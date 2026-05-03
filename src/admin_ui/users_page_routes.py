@@ -13,10 +13,10 @@ Routes:
 
 from __future__ import annotations
 
-import structlog
 from typing import Annotated
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import select
@@ -131,7 +131,9 @@ async def get_user_chart_data(
     Returns {"labels": [...], "requests": [...], "tokens": [...]}.
     """
     from datetime import UTC, datetime, timedelta  # noqa: PLC0415
+
     from sqlalchemy import func  # noqa: PLC0415
+
     from src.db.models import Job  # noqa: PLC0415
 
     _valid = {"24h", "7d", "30d"}

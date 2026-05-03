@@ -13,9 +13,8 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
 import fakeredis.aioredis as fakeredis
-
+import pytest
 from src.admin_ui.auth import (
     _redis_key,
     create_session,

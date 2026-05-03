@@ -24,7 +24,7 @@ On failure it raises HTTPException(401). The app-level exception handler
 from __future__ import annotations
 
 import secrets
-from typing import Annotated, Any
+from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Cookie, Depends, Form, HTTPException, Request, Response

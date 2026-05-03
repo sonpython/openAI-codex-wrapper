@@ -30,9 +30,12 @@ from typing import Any
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
+from src.admin_ui.routes import make_session_redirect_response
+from src.admin_ui.routes import router as admin_ui_router
 from src.codex import auth_session
 from src.db.engine import close_engines, get_bg_engine, get_main_engine, init_engines
 from src.gateway.health import router as health_router
@@ -43,8 +46,6 @@ from src.gateway.middleware.rate_limit import RateLimitMiddleware
 from src.gateway.middleware.request_id import RequestIDMiddleware
 from src.gateway.middleware.timeout import TimeoutMiddleware
 from src.gateway.middleware.usage_tracking import UsageTrackingMiddleware
-from src.admin_ui.routes import make_session_redirect_response, router as admin_ui_router
-from fastapi.staticfiles import StaticFiles
 from src.gateway.routes.admin_api_keys import router as admin_api_keys_router
 from src.gateway.routes.admin_audit import router as admin_audit_router
 from src.gateway.routes.admin_codex_stderr import router as admin_stderr_router
@@ -159,13 +160,13 @@ def create_app() -> FastAPI:
     # ── Exception handlers ─────────────────────────────────────────────────
     # Admin UI: convert session-required 401 into HTMX-aware login redirect.
     from fastapi import HTTPException as _HTTPException  # noqa: PLC0415
+
     from src.admin_ui.routes import _SESSION_REQUIRED_DETAIL  # noqa: PLC0415
 
     @app.exception_handler(_HTTPException)
     async def _http_exception_handler(
         request: Request, exc: _HTTPException
     ) -> JSONResponse | Response:
-        from fastapi.responses import Response as _Response  # noqa: PLC0415
 
         if (
             exc.status_code == 401

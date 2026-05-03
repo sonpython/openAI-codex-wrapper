@@ -29,7 +29,6 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI, Request, Response
-from fastapi.templating import Jinja2Templates
 from httpx import ASGITransport, AsyncClient
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test")
@@ -229,7 +228,7 @@ async def test_rotate_key_returns_row_partial_with_new_plaintext(
     refreshed_key = _mock_key_row()
     refreshed_key.id = key_id
 
-    mock_execute_results = [
+    [
         MagicMock(),          # update execute result
         mock_result_user,     # user select result
     ]

@@ -104,9 +104,9 @@ async def list_jobs(
             limit=limit,
             offset=offset,
         )
-    except Exception:
+    except Exception as err:
         logger.warning("admin.jobs.list_failed", exc_info=True)
-        raise HTTPException(status_code=500, detail="internal_error")
+        raise HTTPException(status_code=500, detail="internal_error") from err
 
     return PaginatedJobs(
         items=[JobSummary(**item) for item in items],

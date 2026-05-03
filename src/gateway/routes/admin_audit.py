@@ -103,9 +103,9 @@ async def list_audit(
             limit=limit,
             offset=offset,
         )
-    except Exception:
+    except Exception as err:
         logger.warning("admin.audit.list_failed", exc_info=True)
-        raise HTTPException(status_code=500, detail="internal_error")
+        raise HTTPException(status_code=500, detail="internal_error") from err
 
     return PaginatedAudit(
         items=[AuditEntry(**item) for item in items],

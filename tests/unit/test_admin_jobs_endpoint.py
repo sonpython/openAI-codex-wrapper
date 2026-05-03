@@ -16,7 +16,7 @@ Covers:
 
 import os
 from collections.abc import AsyncGenerator
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 

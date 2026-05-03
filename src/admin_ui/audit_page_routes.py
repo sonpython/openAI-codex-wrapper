@@ -11,6 +11,7 @@ Routes:
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -113,24 +114,18 @@ async def _fetch_audit(
     """Parse filter params and call crud helper. Returns (items, total)."""
     parsed_user_id: UUID | None = None
     if user_id:
-        try:
+        with contextlib.suppress(ValueError):
             parsed_user_id = UUID(user_id)
-        except ValueError:
-            pass
 
     parsed_from: datetime | None = None
     if from_:
-        try:
+        with contextlib.suppress(ValueError):
             parsed_from = datetime.fromisoformat(from_.replace("Z", "+00:00"))
-        except ValueError:
-            pass
 
     parsed_to: datetime | None = None
     if to:
-        try:
+        with contextlib.suppress(ValueError):
             parsed_to = datetime.fromisoformat(to.replace("Z", "+00:00"))
-        except ValueError:
-            pass
 
     try:
         return await audit_crud.list_with_filters(

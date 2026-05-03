@@ -11,11 +11,12 @@ Routes:
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Annotated
 
 from src.admin_ui.templates_env import templates
 from src.db.crud import plans as plans_crud

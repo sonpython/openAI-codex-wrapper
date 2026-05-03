@@ -13,7 +13,6 @@ Covers:
 from __future__ import annotations
 
 import pytest
-
 from src.admin_ui.prom_client import (
     KPISnapshot,
     SparklineData,
@@ -21,7 +20,6 @@ from src.admin_ui.prom_client import (
     fetch_sparklines,
     parse_prometheus_text,
 )
-
 
 # ── parse_prometheus_text ──────────────────────────────────────────────────────
 

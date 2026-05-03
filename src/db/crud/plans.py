@@ -134,12 +134,12 @@ async def update(
         )
         .on_conflict_do_update(
             index_elements=["tier"],
-            set_=dict(
-                rpm=rpm,
-                tpm=tpm,
-                concurrent=concurrent,
-                monthly_tokens=monthly_quota,
-            ),
+            set_={
+                "rpm": rpm,
+                "tpm": tpm,
+                "concurrent": concurrent,
+                "monthly_tokens": monthly_quota,
+            },
         )
     )
     await session.execute(stmt)
@@ -147,8 +147,7 @@ async def update(
 
     # Re-fetch to get the authoritative DB state (including server_defaults).
     result = await session.execute(select(Plan).where(Plan.tier == tier))
-    updated = result.scalar_one()
-    return updated
+    return result.scalar_one()
 
 
 async def list_all(session: AsyncSession) -> list[Plan]:

@@ -19,8 +19,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-from src.admin_ui.routes import _COOKIE_NAME, _SESSION_REQUIRED_DETAIL, router, make_session_redirect_response
+from src.admin_ui.routes import (
+    _COOKIE_NAME,
+    _SESSION_REQUIRED_DETAIL,
+    make_session_redirect_response,
+    router,
+)
 
 # ── App fixture ────────────────────────────────────────────────────────────────
 
@@ -31,14 +35,13 @@ _SIGNED_COOKIE = None  # set after import
 
 def _make_app() -> FastAPI:
     from fastapi import HTTPException
-    from fastapi.responses import JSONResponse, Response
+    from fastapi.responses import JSONResponse
 
     app = FastAPI()
     app.include_router(router)
 
     @app.exception_handler(HTTPException)
     async def _exc(request, exc):  # type: ignore[no-untyped-def]
-        from fastapi.requests import Request as _Req
 
         if exc.status_code == 401 and exc.detail == _SESSION_REQUIRED_DETAIL:
             return make_session_redirect_response(request)

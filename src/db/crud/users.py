@@ -8,10 +8,10 @@ All functions accept an AsyncSession and return typed ORM instances.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import ApiKey, UsageCounter, User
@@ -80,7 +80,7 @@ async def list_with_aggregates(
 
     Returns (rows, total_count).
     """
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     current_period = date(today.year, today.month, 1)
 
     # Subquery: key count per user

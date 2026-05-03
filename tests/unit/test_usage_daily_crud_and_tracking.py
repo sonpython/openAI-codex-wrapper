@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -30,10 +30,8 @@ os.environ.setdefault("ADMIN_TOKEN", "test-admin-secret")
 import pytest
 from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
 from src.db.models import Base
 from src.db.models_usage_daily import UsageDaily
-
 
 # ── SQLite fixture ────────────────────────────────────────────────────────────
 
@@ -253,8 +251,8 @@ def _make_tracking_app(user_id: str, key_id: str, status: int = 200):  # type: i
     user_id/api_key_id at the start of __call__, before delegating to inner app).
     We wrap the middleware in a thin outer ASGI layer that injects state first.
     """
-    from starlette.responses import Response as StarletteResponse  # noqa: PLC0415
     from src.gateway.middleware.usage_tracking import UsageTrackingMiddleware  # noqa: PLC0415
+    from starlette.responses import Response as StarletteResponse  # noqa: PLC0415
 
     async def inner(scope, receive, send):  # type: ignore[no-untyped-def]
         resp = StarletteResponse(status_code=status)
@@ -284,6 +282,7 @@ def _make_tracking_app(user_id: str, key_id: str, status: int = 200):  # type: i
 async def test_middleware_calls_usage_daily_upsert_on_success() -> None:
     """Successful 2xx response → usage_daily_upsert called with correct args."""
     import asyncio  # noqa: PLC0415
+
     from httpx import ASGITransport, AsyncClient  # noqa: PLC0415
 
     user_id = str(uuid.uuid4())
@@ -337,6 +336,7 @@ async def test_middleware_calls_usage_daily_upsert_on_success() -> None:
 async def test_middleware_skips_daily_upsert_on_4xx() -> None:
     """4xx response → bg task never scheduled → usage_daily_upsert not called."""
     import asyncio  # noqa: PLC0415
+
     from httpx import ASGITransport, AsyncClient  # noqa: PLC0415
 
     user_id = str(uuid.uuid4())
@@ -367,6 +367,7 @@ async def test_middleware_skips_daily_upsert_on_4xx() -> None:
 async def test_middleware_daily_upsert_exception_is_swallowed() -> None:
     """Exception in usage_daily_upsert is swallowed; response status unaffected."""
     import asyncio  # noqa: PLC0415
+
     from httpx import ASGITransport, AsyncClient  # noqa: PLC0415
 
     user_id = str(uuid.uuid4())
@@ -430,9 +431,10 @@ def _make_worker_context(cancel: bool = False) -> dict[str, Any]:
 async def test_worker_success_calls_usage_daily_upsert() -> None:
     """Successful job with api_key_id → usage_daily_upsert called once with tokens."""
     import pathlib  # noqa: PLC0415
-    from src.workers.job_handlers import run_codex_job  # noqa: PLC0415
-    from src.workers.git_diff import DiffResult  # noqa: PLC0415
+
     from src.codex.events import TurnCompleted  # noqa: PLC0415
+    from src.workers.git_diff import DiffResult  # noqa: PLC0415
+    from src.workers.job_handlers import run_codex_job  # noqa: PLC0415
 
     key_id = uuid.uuid4()
     job = _make_job_mock(api_key_id=key_id)
@@ -486,9 +488,10 @@ async def test_worker_success_calls_usage_daily_upsert() -> None:
 async def test_worker_skips_usage_daily_when_no_api_key_id() -> None:
     """Job with api_key_id=None → usage_daily_upsert not called."""
     import pathlib  # noqa: PLC0415
-    from src.workers.job_handlers import run_codex_job  # noqa: PLC0415
-    from src.workers.git_diff import DiffResult  # noqa: PLC0415
+
     from src.codex.events import TurnCompleted  # noqa: PLC0415
+    from src.workers.git_diff import DiffResult  # noqa: PLC0415
+    from src.workers.job_handlers import run_codex_job  # noqa: PLC0415
 
     job = _make_job_mock(api_key_id=None)
     job_id = str(job.id)
@@ -545,7 +548,7 @@ async def test_admin_usage_query_references_usage_daily_table() -> None:
     mock_session = MagicMock(spec=AsyncSession)
     mock_session.execute = _mock_execute  # type: ignore[method-assign]
 
-    since = datetime(2026, 4, 22, tzinfo=timezone.utc)
+    since = datetime(2026, 4, 22, tzinfo=UTC)
     rows = await _query_daily_series(mock_session, since)
 
     assert rows == []
@@ -576,7 +579,7 @@ async def test_admin_usage_query_filters_by_user_id() -> None:
     mock_session = MagicMock(spec=AsyncSession)
     mock_session.execute = _mock_execute  # type: ignore[method-assign]
 
-    since = datetime(2026, 4, 22, tzinfo=timezone.utc)
+    since = datetime(2026, 4, 22, tzinfo=UTC)
     await _query_daily_series(mock_session, since, user_id=uid)
 
     from sqlalchemy.dialects import sqlite as sqlite_dialect  # noqa: PLC0415
@@ -607,7 +610,7 @@ async def test_admin_usage_query_filters_by_api_key_id() -> None:
     mock_session = MagicMock(spec=AsyncSession)
     mock_session.execute = _mock_execute  # type: ignore[method-assign]
 
-    since = datetime(2026, 4, 22, tzinfo=timezone.utc)
+    since = datetime(2026, 4, 22, tzinfo=UTC)
     await _query_daily_series(mock_session, since, api_key_id=kid)
 
     from sqlalchemy.dialects import sqlite as sqlite_dialect  # noqa: PLC0415
@@ -623,7 +626,7 @@ async def test_admin_usage_query_filters_by_api_key_id() -> None:
 @pytest.mark.asyncio
 async def test_admin_usage_query_returns_daily_usage_rows() -> None:
     """Rows from usage_daily are mapped to DailyUsage schema correctly."""
-    from src.gateway.routes.admin_usage import _query_daily_series, DailyUsage  # noqa: PLC0415
+    from src.gateway.routes.admin_usage import DailyUsage, _query_daily_series  # noqa: PLC0415
 
     fake_row = MagicMock()
     fake_row.day = date(2026, 4, 25)
@@ -638,7 +641,7 @@ async def test_admin_usage_query_returns_daily_usage_rows() -> None:
     mock_session = MagicMock(spec=AsyncSession)
     mock_session.execute = _mock_execute  # type: ignore[method-assign]
 
-    since = datetime(2026, 4, 22, tzinfo=timezone.utc)
+    since = datetime(2026, 4, 22, tzinfo=UTC)
     rows = await _query_daily_series(mock_session, since)
 
     assert len(rows) == 1
