@@ -53,6 +53,10 @@ services:
       dockerfile: Dockerfile.gateway
     environment:
       DATABASE_URL: postgresql+asyncpg://codex:codex@postgres-test:5432/codex_wrapper_test
+      # Settings.redis_url is required even though alembic doesn't connect to redis;
+      # Settings() validates on import. Point at the test redis to satisfy the field.
+      REDIS_URL: redis://redis-test:6379/0
+      ADMIN_TOKEN: test-admin-token
       LOG_LEVEL: WARNING
     command: ["uv", "run", "--no-sync", "alembic", "upgrade", "head"]
     depends_on:
