@@ -43,6 +43,25 @@ services:
     networks:
       - test-net
 
+  # ── DB schema init (one-shot) ───────────────────────────────────────────────
+  # Runs `alembic upgrade head` against the fresh postgres-test and exits.
+  # gateway-test and worker-test both gate on this completing successfully so
+  # they boot against a populated schema instead of crashing on missing tables.
+  migrate-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    environment:
+      DATABASE_URL: postgresql+asyncpg://codex:codex@postgres-test:5432/codex_wrapper_test
+      LOG_LEVEL: WARNING
+    command: ["uv", "run", "--no-sync", "alembic", "upgrade", "head"]
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - test-net
+
   # ── Gateway (mock-codex injected) ───────────────────────────────────────────
 
   gateway-test:
@@ -66,6 +85,8 @@ services:
         condition: service_healthy
       redis-test:
         condition: service_healthy
+      migrate-test:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8000/healthz || exit 1"]
       interval: 5s
@@ -98,6 +119,8 @@ services:
         condition: service_healthy
       redis-test:
         condition: service_healthy
+      migrate-test:
+        condition: service_completed_successfully
     networks:
       - test-net
 
