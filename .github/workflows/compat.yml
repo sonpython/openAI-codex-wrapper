@@ -52,7 +52,7 @@ jobs:
           KEY=$(curl -sf -X POST http://localhost:8001/admin/api-keys \
             -H "X-Admin-Token: test-admin-token" \
             -H "Content-Type: application/json" \
-            -d '{"user_email":"compat@ci.local","name":"ci-compat-key","tier":"pro"}' \
+            -d '{"user_email":"compat@example.com","name":"ci-compat-key","tier":"pro"}' \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['key'])")
           echo "api_key=$KEY" >> "$GITHUB_OUTPUT"
 
