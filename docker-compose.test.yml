@@ -84,6 +84,7 @@ services:
       LOG_LEVEL: WARNING
     volumes:
       - ./tests/fixtures:/app/tests/fixtures:ro
+      - test-workspaces:/workspaces
     depends_on:
       postgres-test:
         condition: service_healthy
