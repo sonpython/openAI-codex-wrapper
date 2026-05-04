@@ -132,11 +132,18 @@ services:
     depends_on:
       - loki
 
-  # ── Exporters ───────────────────────────────────────────────────────────────
-
+  # ── Exporters + backup (opt-in via `--profile full-backup-obs`) ─────────────
+  # No core service depends on these — they only feed Prometheus dashboards
+  # and the daily DB snapshot. Skipped by default to keep RAM low on small
+  # hosts. Enable with:
+  #   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml \
+  #     --profile full-backup-obs up -d
+  # Prometheus scrape config will show postgres-exporter / redis-exporter as
+  # DOWN targets while disabled — cosmetic only, no dashboard panels break.
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.15.0
     restart: unless-stopped
+    profiles: ["full-backup-obs"]
     logging: *default-logging
     environment:
       DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-codex}:${POSTGRES_PASSWORD:-codex}@postgres:5432/${POSTGRES_DB:-codex_wrapper}?sslmode=disable"
@@ -147,6 +154,7 @@ services:
   redis-exporter:
     image: oliver006/redis_exporter:v1.62.0
     restart: unless-stopped
+    profiles: ["full-backup-obs"]
     logging: *default-logging
     environment:
       REDIS_ADDR: "redis://redis:6379"
@@ -160,6 +168,7 @@ services:
       context: infra/backup
       dockerfile: Dockerfile.backup
     restart: unless-stopped
+    profiles: ["full-backup-obs"]
     logging: *default-logging
     environment:
       POSTGRES_USER: "${POSTGRES_USER:-codex}"
