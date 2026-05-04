@@ -103,14 +103,14 @@ def test_api_key(compose_stack: tuple[str, str]) -> Generator[str, None, None]:
     # Create key
     resp = httpx.post(
         f"{base_url}/admin/api-keys",
-        json={"name": "compat-test-key", "tier": "pro"},
+        json={"user_email": "compat@example.com", "name": "compat-test-key", "tier": "pro"},
         headers=headers,
         timeout=10,
     )
     resp.raise_for_status()
     body = resp.json()
     key_id: str = body["id"]
-    plaintext: str = body["plaintext_key"]
+    plaintext: str = body["key"]
 
     yield plaintext
 

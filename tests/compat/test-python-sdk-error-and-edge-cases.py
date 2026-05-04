@@ -26,12 +26,12 @@ def test_rate_limit_raises_rate_limit_error(
     base_url, _ = compose_stack
     admin_resp = _httpx.post(
         f"{base_url}/admin/api-keys",
-        json={"name": "rate-limit-test", "tier": "free"},
+        json={"user_email": "rate-limit@example.com", "name": "rate-limit-test", "tier": "free"},
         headers={"X-Admin-Token": "test-admin-token", "Content-Type": "application/json"},
         timeout=10,
     )
     admin_resp.raise_for_status()
-    limited_key = admin_resp.json()["plaintext_key"]
+    limited_key = admin_resp.json()["key"]
 
     limited_client = openai.OpenAI(
         base_url=f"{base_url}/v1",
