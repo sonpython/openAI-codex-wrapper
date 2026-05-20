@@ -196,6 +196,11 @@ async def run_codex(
     if search:
         argv += ["--search"]
 
+    # Reasoning effort override: lower effort cuts the model's "thinking" time
+    # (big latency win) at the cost of depth. Omitted when unset → Codex default.
+    if settings.codex_reasoning_effort:
+        argv += ["-c", f"model_reasoning_effort={settings.codex_reasoning_effort}"]
+
     argv.append(prompt)
 
     # C-2 fix: dual auth env vars for robustness.

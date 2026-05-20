@@ -8,6 +8,7 @@ never read `os.environ` directly in application code.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -48,6 +49,13 @@ class Settings(BaseSettings):
     # ── Codex CLI ─────────────────────────────────────────────────────────
     codex_bin: str = "codex"  # Path or name of the codex executable
     codex_auth_dir: str = "/codex-auth"  # RO bind-mount of ~/.codex
+    # Reasoning effort passed to Codex as ``-c model_reasoning_effort=<value>``.
+    # Lower effort = the model spends far less time "thinking" before replying,
+    # so first-token + total latency drop sharply at the cost of depth on hard
+    # tasks. None → omit the override → Codex uses its built-in default
+    # (typically "medium"/"high", which is the slow path users feel).
+    # Recommended for chat-style workloads: "low" (or "minimal" for snappiest).
+    codex_reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
 
     # ── Codex feature flags ────────────────────────────────────────────────
     # Set codex_has_ephemeral=True only after ``make verify-codex`` confirms
@@ -78,6 +86,14 @@ class Settings(BaseSettings):
     # Maximum assembled prompt length in characters — guards against runaway
     # prompts before they reach the subprocess. Checked in build_prompt().
     chat_max_prompt_chars: int = 200_000
+    # Surface Codex intermediate activity (reasoning blocks, command execution,
+    # web searches) as ``delta.reasoning_content`` chunks during streaming so
+    # clients see live progress before the final answer arrives. Codex only
+    # emits the agent_message in one ``item.completed`` shot, so without this
+    # the SSE stream is silent for the whole turn then dumps the answer at once.
+    # The actual answer stays in ``delta.content`` (clean separation); clients
+    # that don't render reasoning_content ignore it harmlessly (extra=allow).
+    chat_stream_progress: bool = True
 
     # ── Responses API (/v1/responses) ─────────────────────────────────────
     # Timeout for a single Responses API request (sync or stream).

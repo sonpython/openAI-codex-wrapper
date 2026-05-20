@@ -66,12 +66,14 @@ def _settings(
     grace: int = 5,
     codex_bin: str = "codex",
     auth_dir: str = "/codex-auth",
+    reasoning_effort: str | None = None,
 ) -> MagicMock:
     s = MagicMock()
     s.codex_bin = codex_bin
     s.codex_has_ephemeral = has_ephemeral
     s.job_cancel_grace_seconds = grace
     s.codex_auth_dir = auth_dir
+    s.codex_reasoning_effort = reasoning_effort
     return s
 
 
@@ -155,6 +157,50 @@ async def test_argv_color_never_pair_unbroken(tmp_path: Path) -> None:
     prompt_idx = captured_argv.index("hi")
     assert eph_idx > cd_idx, "--ephemeral must come after --cd <dir>"
     assert eph_idx < prompt_idx, "--ephemeral must come before the prompt"
+
+
+@pytest.mark.asyncio
+async def test_argv_reasoning_effort_override(tmp_path: Path) -> None:
+    """When codex_reasoning_effort is set, argv carries -c model_reasoning_effort=<v>.
+
+    The pair must be adjacent and precede the prompt; unset → flag absent.
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    captured_argv: list[str] = []
+
+    async def _fake_exec(*argv: str, **kwargs: object) -> MagicMock:
+        captured_argv.extend(argv)
+        return _fake_proc([b'{"type":"turn.completed"}\n'])
+
+    # Set → flag present, value adjacent, before prompt.
+    settings = _settings(reasoning_effort="low")
+    with (
+        patch("src.codex.runner.get_settings", return_value=settings),
+        patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
+    ):
+        async for _ in run_codex("hi", sandbox_mode="read-only", workspace_dir=ws, timeout=5.0):
+            pass
+
+    c_idxs = [i for i, a in enumerate(captured_argv) if a == "-c"]
+    assert any(
+        captured_argv[i + 1] == "model_reasoning_effort=low" for i in c_idxs
+    ), f"reasoning_effort override missing/misformed: {captured_argv!r}"
+    eff_idx = captured_argv.index("model_reasoning_effort=low")
+    assert eff_idx < captured_argv.index("hi"), "override must come before the prompt"
+
+    # Unset → no override flag at all.
+    captured_argv.clear()
+    settings_none = _settings(reasoning_effort=None)
+    with (
+        patch("src.codex.runner.get_settings", return_value=settings_none),
+        patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
+    ):
+        async for _ in run_codex("hi", sandbox_mode="read-only", workspace_dir=ws, timeout=5.0):
+            pass
+    assert not any(
+        a.startswith("model_reasoning_effort=") for a in captured_argv
+    ), f"override must be absent when unset: {captured_argv!r}"
 
 
 @pytest.mark.asyncio

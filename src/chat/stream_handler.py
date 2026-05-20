@@ -34,10 +34,14 @@ from src.chat.usage_estimator import _count_tokens
 from src.codex.events import (
     AgentMessageItem,
     CodexEvent,
+    CommandExecutionItem,
     ErrorEvent,
     ItemCompleted,
+    ItemStarted,
+    ReasoningItem,
     TurnCompleted,
     TurnFailed,
+    WebSearchItem,
 )
 from src.gateway.schemas.chat_request import ChatCompletionRequest
 from src.gateway.schemas.chat_response import (
@@ -46,6 +50,7 @@ from src.gateway.schemas.chat_response import (
     Delta,
     Usage,
 )
+from src.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -89,6 +94,10 @@ async def stream_chunks(
     # entire accumulated text on every iteration.
     _completion_tokens: int = 0
     finish = "stop"
+    # When enabled, Codex intermediate activity (reasoning, command runs, web
+    # searches) is streamed as `delta.reasoning_content` so clients see live
+    # progress instead of silence until the single final answer item arrives.
+    progress = get_settings().chat_stream_progress
 
     def _make_chunk(
         delta: dict[str, str | None],
@@ -122,8 +131,30 @@ async def stream_chunks(
         # exclude_none keeps wire format clean (no "usage": null on content chunks)
         return f"data: {chunk.model_dump_json(exclude_none=True)}\n\n".encode()
 
+    def _progress_chunk(text: str) -> bytes:
+        """Emit Codex activity as a `reasoning_content` delta (not answer text).
+
+        Carries `role` on the very first chunk of the stream (OpenAI requires
+        the leading chunk to declare the assistant role). Does NOT count toward
+        `_completion_tokens` — reasoning_content is not the answer body.
+        """
+        nonlocal sent_role
+        delta: dict[str, str | None] = {"reasoning_content": text}
+        if not sent_role:
+            delta["role"] = "assistant"
+            sent_role = True
+        return _make_chunk(delta)
+
     try:
         async for evt in events:
+            # Progress: surface activity as soon as a step starts (command/search).
+            if progress and isinstance(evt, ItemStarted):
+                if isinstance(evt.item, CommandExecutionItem):
+                    yield _progress_chunk(f"$ {evt.item.command}\n")
+                elif isinstance(evt.item, WebSearchItem) and evt.item.query:
+                    yield _progress_chunk(f"\U0001f50d {evt.item.query}\n")
+                continue
+
             if isinstance(evt, ItemCompleted) and isinstance(evt.item, AgentMessageItem):
                 piece = evt.item.text
 
@@ -144,6 +175,16 @@ async def stream_chunks(
                 if req.max_tokens and _completion_tokens >= req.max_tokens:
                     finish = "length"
                     break
+
+            elif (
+                progress
+                and isinstance(evt, ItemCompleted)
+                and isinstance(evt.item, ReasoningItem)
+                and evt.item.text
+            ):
+                # Reasoning arrives as a completed block (Codex emits no deltas
+                # for it); stream it before the final answer as progress.
+                yield _progress_chunk(evt.item.text + "\n")
 
             elif isinstance(evt, ErrorEvent):
                 logger.warning(

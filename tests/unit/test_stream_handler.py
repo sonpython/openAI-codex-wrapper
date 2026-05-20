@@ -29,11 +29,15 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 from src.codex.events import (
     AgentMessageItem,
+    CommandExecutionItem,
     ErrorEvent,
     ErrorPayload,
     ItemCompleted,
+    ItemStarted,
+    ReasoningItem,
     TurnCompleted,
     TurnFailed,
+    WebSearchItem,
 )
 from src.gateway.schemas.chat_request import ChatCompletionRequest
 
@@ -345,3 +349,109 @@ async def test_estimate_tokens_called_linearly() -> None:
     assert (
         call_count <= n_chunks + 2
     ), f"Expected O(N) calls (≤{n_chunks + 2}), got {call_count} — possible O(N²) regression"
+
+
+# ── Progress streaming (reasoning / command / web search) ──────────────────────
+
+
+def _deltas(chunks: list[bytes]) -> list[dict]:
+    """Extract the delta dicts of content-bearing chunks (skip choices=[] usage)."""
+    return [c["choices"][0]["delta"] for c in _parse_data_chunks(chunks) if c.get("choices")]
+
+
+@pytest.mark.asyncio
+async def test_reasoning_streamed_as_reasoning_content_before_answer() -> None:
+    """Reasoning block is surfaced as delta.reasoning_content ahead of the answer.
+
+    The leading chunk carries role=assistant; the answer stays in delta.content.
+    """
+    chunks = await _collect(
+        _req(),
+        ItemCompleted(
+            type="item.completed",
+            item=ReasoningItem(type="reasoning", id="r1", text="Thinking step"),
+        ),
+        ItemCompleted(
+            type="item.completed",
+            item=AgentMessageItem(type="agent_message", id="i1", text="Answer"),
+        ),
+        TurnCompleted(type="turn.completed"),
+    )
+    deltas = _deltas(chunks)
+    # First emitted chunk = reasoning, with role.
+    assert deltas[0].get("role") == "assistant"
+    assert deltas[0].get("reasoning_content") == "Thinking step\n"
+    assert deltas[0].get("content") is None
+    # Answer arrives as content (no role — already sent), reasoning_content absent.
+    answer = next(d for d in deltas if d.get("content"))
+    assert answer["content"] == "Answer"
+    assert "reasoning_content" not in answer or answer["reasoning_content"] is None
+    assert answer.get("role") is None
+
+
+@pytest.mark.asyncio
+async def test_command_execution_progress_on_item_started() -> None:
+    chunks = await _collect(
+        _req(),
+        ItemStarted(
+            type="item.started",
+            item=CommandExecutionItem(
+                type="command_execution", id="c1", command="echo hi", status="pending"
+            ),
+        ),
+        ItemCompleted(
+            type="item.completed",
+            item=AgentMessageItem(type="agent_message", id="i1", text="done"),
+        ),
+        TurnCompleted(type="turn.completed"),
+    )
+    deltas = _deltas(chunks)
+    assert deltas[0].get("reasoning_content") == "$ echo hi\n"
+    assert deltas[0].get("role") == "assistant"
+
+
+@pytest.mark.asyncio
+async def test_web_search_progress_on_item_started() -> None:
+    chunks = await _collect(
+        _req(),
+        ItemStarted(
+            type="item.started",
+            item=WebSearchItem(type="web_search", id="w1", query="python asyncio"),
+        ),
+        TurnCompleted(type="turn.completed"),
+    )
+    deltas = _deltas(chunks)
+    assert any("python asyncio" in (d.get("reasoning_content") or "") for d in deltas)
+
+
+@pytest.mark.asyncio
+async def test_progress_disabled_emits_no_reasoning_content() -> None:
+    """With chat_stream_progress=False, behavior reverts to answer-only stream."""
+    from types import SimpleNamespace
+
+    import src.chat.stream_handler as sh_mod  # noqa: PLC0415
+
+    with patch.object(
+        sh_mod, "get_settings", return_value=SimpleNamespace(chat_stream_progress=False)
+    ):
+        chunks = await _collect(
+            _req(),
+            ItemStarted(
+                type="item.started",
+                item=CommandExecutionItem(
+                    type="command_execution", id="c1", command="echo hi"
+                ),
+            ),
+            ItemCompleted(
+                type="item.completed",
+                item=ReasoningItem(type="reasoning", id="r1", text="thinking"),
+            ),
+            ItemCompleted(
+                type="item.completed",
+                item=AgentMessageItem(type="agent_message", id="i1", text="Answer"),
+            ),
+            TurnCompleted(type="turn.completed"),
+        )
+    deltas = _deltas(chunks)
+    assert all("reasoning_content" not in d for d in deltas)
+    assert deltas[0].get("content") == "Answer"
