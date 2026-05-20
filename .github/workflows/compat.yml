@@ -5,6 +5,8 @@ on:
     branches: ["main"]
   push:
     branches: ["main", "dev"]
+  # Allow deploy.yml to call this as a reusable workflow (compat-gate).
+  workflow_call:
 
 jobs:
   compat:
